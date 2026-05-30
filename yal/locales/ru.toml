@@ -1,0 +1,45 @@
+[common]
+yes-variants     = ["y", "yes", "д", "да"]
+confirm-prompt   = " [y/N] "
+
+[errors]
+unknown-kind     = "Неизвестный тип: '{kind}'. Доступные: {available}"
+unknown-template = "Шаблон '{name}' не найден для '{kind}'. Доступные: {available}"
+parse-spec       = "Не удалось разобрать: '{spec}'"
+parse-spec-hint  = "Формат: {fmt}"
+cancelled        = "{action} отменено."
+commit-info-fail = "Не удалось получить информацию о коммите: {error}"
+release-missing  = "Релиз {ref!r} не найден.\n      Доступные: {available}"
+no-releases-warn = "Предупреждение: не удалось получить список релизов ({error})"
+
+[create]
+action           = "Установка"
+using-local      = "Используется локальная версия: {version}"
+created          = "✓ Создано: {path}"
+error            = "Ошибка: {error}"
+
+[update]
+action            = "Обновление"
+already-latest    = "Уже установлена последняя версия: {version}"
+already-latest-commit = "Уже установлена последняя версия: {version} (коммит)"
+upgrading         = "Обновление {kind}:{name}: {old} → {new}"
+upgrading-commit  = "Обновление {kind}:{name}: {old} → {new} (коммит)"
+installing        = "Установка {kind}:{name}: {version} (релиз)"
+installing-commit = "Установка {kind}:{name}: {version} (коммит)"
+installed         = "✓ Установлено: {path}"
+no-releases       = "Репозиторий не имеет релизов — буду клонировать."
+commit-fail       = "Не удалось получить последний коммит: {error}"
+
+[download]
+confirm   = "\nШаблон '{kind}:{name}' ({source_type} {version}) не найден локально.\n      Источник: {repo}\n      Установить в ~/.yal/templates/{kind}/{version}/?"
+release   = "релиз"
+commit    = "коммит"
+release-downloading = "Скачиваю релиз {tag}…"
+commit-cloning      = "Клонирую коммит {version}…"
+done                = "Установлено в: {path}"
+
+[config]
+no-config        = "yal.toml не найден — шаблон будет скопирован без настройки."
+field-required   = "Поле обязательно."
+field-select-hint = "Введите один из вариантов: {options}"
+field-invalid-option = "Недопустимый вариант. Доступные: {options}"

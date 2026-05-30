@@ -1,0 +1,45 @@
+[common]
+yes-variants     = ["y", "yes"]
+confirm-prompt   = " [y/N] "
+
+[errors]
+unknown-kind     = "Unknown type: '{kind}'. Available: {available}"
+unknown-template = "Template '{name}' not found for '{kind}'. Available: {available}"
+parse-spec       = "Could not parse: '{spec}'"
+parse-spec-hint  = "Format: {fmt}"
+cancelled        = "{action} cancelled."
+commit-info-fail = "Could not get commit info: {error}"
+release-missing  = "Release {ref!r} not found.\n      Available: {available}"
+no-releases-warn = "Warning: could not fetch releases ({error})"
+
+[create]
+action           = "Installation"
+using-local      = "Using local version: {version}"
+created          = "✓ Created: {path}"
+error            = "Error: {error}"
+
+[update]
+action            = "Update"
+already-latest    = "Already at latest version: {version}"
+already-latest-commit = "Already at latest version: {version} (commit)"
+upgrading         = "Updating {kind}:{name}: {old} → {new}"
+upgrading-commit  = "Updating {kind}:{name}: {old} → {new} (commit)"
+installing        = "Installing {kind}:{name}: {version} (release)"
+installing-commit = "Installing {kind}:{name}: {version} (commit)"
+installed         = "✓ Installed: {path}"
+no-releases       = "Repository has no releases — will clone."
+commit-fail       = "Could not get latest commit: {error}"
+
+[download]
+confirm   = "\nTemplate '{kind}:{name}' ({source_type} {version}) not found locally.\n      Source: {repo}\n      Install to ~/.yal/templates/{kind}/{version}/?"
+release   = "release"
+commit    = "commit"
+release-downloading = "Downloading release {tag}…"
+commit-cloning      = "Cloning commit {version}…"
+done                = "Installed to: {path}"
+
+[config]
+no-config        = "yal.toml not found — template will be copied without configuration."
+field-required   = "This field is required."
+field-select-hint = "Enter one of: {options}"
+field-invalid-option = "Invalid option. Available: {options}"
