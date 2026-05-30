@@ -7,12 +7,6 @@
 - `yal create <kind>[:<name>][@<ref>]` — uses a template to create a new project (currently supports only `book` kind)
 - `yal update <kind>[:<name>]` — updates an existing project (currently supports only `book` kind)
 
-## Install utility
-
-```bash
-pip install yal
-```
-
 ## Create a project
 Downloads the template (if not cached locally) and initiates the configuration process.
 ```bash
