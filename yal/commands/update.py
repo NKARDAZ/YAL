@@ -70,7 +70,7 @@ def _update_release(kind, name, entry, handler, releases) -> None:
     dest = handler._template_dir(entry, name, version)
     print(f"[YAL] {t('download.release-downloading', tag=latest.tag)}")
     github.download_release(latest, dest)
-    handler._save_meta(entry, name, version, "release")
+    handler._save_meta(entry, name, version, "release", latest.released_at)
     print(f"[YAL] {t('update.installed', path=dest)}")
 
 
@@ -98,7 +98,7 @@ def _update_commit(kind, name, entry, handler) -> None:
     dest = handler._template_dir(entry, name, version)
     print(f"[YAL] {t('download.commit-cloning', version=version)}")
     github.clone_repo(entry.repo, dest, ref=info.sha)
-    handler._save_meta(entry, name, version, "commit")
+    handler._save_meta(entry, name, version, "commit", info.released_at)
     print(f"[YAL] {t('update.installed', path=dest)}")
 
 
