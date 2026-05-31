@@ -1,25 +1,19 @@
 """
-Обработчик типа 'book'.
-Не содержит встроенного контента — всё берётся из репозитория,
-указанного в реестре (registry.BOOK_REGISTRY или user_registry).
-
-Поддерживает оба хранилища:
-  - встроенные шаблоны → store  (~/.yal/templates/<kind>/<name>/<version>/)
-  - пользовательские   → user_store (~/.yal/user-templates/<kind>/<name>/<version>/)
-
-Какое хранилище использовать определяется флагом is_user на TemplateEntry.
+Универсальный обработчик шаблонов GenericHandler.
 """
 
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Literal, cast
 
 from yal import github, store, user_store
 from yal.i18n import t, yes_variants
 from yal.templates.registry import TemplateEntry
 
-KIND = "book"
+# Определяем допустимые типы источников для строгой типизации
+SourceType = Literal["release", "commit"]
 
 
 class CreateResult:
@@ -28,7 +22,10 @@ class CreateResult:
         self.version = version
 
 
-class BookHandler:
+class GenericHandler:
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
     def create(
         self,
         entry: TemplateEntry,
@@ -38,9 +35,9 @@ class BookHandler:
         custom_folder_name: str | None = None,
     ) -> CreateResult:
         version = self._resolve_version(entry, name, ref)
-        src = _template_dir(entry, name, version)
+        src = self._template_dir(entry, name, version)
 
-        label = KIND if name.lower() == "default" else name
+        label = self.kind if name.lower() == "default" else name
         folder_name = custom_folder_name if custom_folder_name else f"{label}-{version}"
         dest = output_dir / folder_name
 
@@ -61,12 +58,12 @@ class BookHandler:
         ref: str | None,
     ) -> str:
         if ref:
-            if _is_installed(entry, name, ref):
+            if self._is_installed(entry, name, ref):
                 print(f"[YAL] {t('create.using-local', version=ref)}")
                 return ref
             return self._download(entry, name, ref)
 
-        recent = _get_most_recent_local(entry, name)
+        recent = self._get_most_recent_local(entry, name)
         if recent:
             print(f"[YAL] {t('create.using-local', version=recent)}")
             return recent
@@ -105,17 +102,17 @@ class BookHandler:
 
         version = target.tag.lstrip("vV")
 
-        if _is_installed(entry, name, version):
+        if self._is_installed(entry, name, version):
             print(f"[YAL] {t('create.using-local', version=version)}")
             return version
 
-        if not _confirm_download(KIND, name, version, t("download.release"), entry.repo, entry.is_user):
+        if not self.confirm_download(name, version, t("download.release"), entry.repo, entry.is_user):
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
 
-        dest = _template_dir(entry, name, version)
+        dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
         github.download_release(target, dest)
-        _save_meta(entry, name, version, "release")
+        self._save_meta(entry, name, version, "release")
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
@@ -137,14 +134,14 @@ class BookHandler:
 
         version = info.sha7
 
-        if _is_installed(entry, name, version):
+        if self._is_installed(entry, name, version):
             print(f"[YAL] {t('create.using-local', version=version)}")
             return version
 
-        if not _confirm_download(KIND, name, version, t("download.commit"), entry.repo, entry.is_user):
+        if not self.confirm_download(name, version, t("download.commit"), entry.repo, entry.is_user):
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
 
-        dest = _template_dir(entry, name, version)
+        dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.commit-cloning', version=version)}")
         try:
             github.clone_repo(entry.repo, dest, ref=info.sha)
@@ -154,45 +151,57 @@ class BookHandler:
                 from yal.github import _force_remove_readonly
                 _shutil.rmtree(dest, onexc=_force_remove_readonly)
             raise
-        _save_meta(entry, name, version, "commit")
+        self._save_meta(entry, name, version, "commit")
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
+    # ── Адаптеры к хранилищам ─────────────────────────────────────────────────
 
-# ── диспетчеры хранилища ──────────────────────────────────────────────────────
-# Единственное место, где решается "встроенный или пользовательский".
+    def _template_dir(self, entry: TemplateEntry, name: str, version: str) -> Path:
+        if entry.is_user:
+            return user_store.user_template_dir(self.kind, name, version)
+        return store.template_dir(self.kind, name, version)
 
-def _template_dir(entry: TemplateEntry, name: str, version: str) -> Path:
-    if entry.is_user:
-        return user_store.user_template_dir(KIND, name, version)
-    return store.template_dir(KIND, name, version)
+    def _is_installed(self, entry: TemplateEntry, name: str, version: str) -> bool:
+        if entry.is_user:
+            return user_store.user_is_installed(self.kind, name, version)
+        return store.is_installed(self.kind, name, version)
+
+    def _get_most_recent_local(self, entry: TemplateEntry, name: str) -> str | None:
+        if entry.is_user:
+            return user_store.user_get_most_recent_local(self.kind, name)
+        return store.get_most_recent_local(self.kind, name)
+
+    def _save_meta(self, entry: TemplateEntry, name: str, version: str, source: str) -> None:
+        src_literal = cast(SourceType, source)
+        if entry.is_user:
+            user_store.user_save_meta(self.kind, name, version, src_literal, entry.repo)
+        else:
+            store.save_meta(self.kind, name, version, src_literal, entry.repo)
+
+    def confirm_download(
+        self, name: str, version: str, source_type: str, repo: str, is_user: bool = False
+    ) -> bool:
+        confirm_key = "download.confirm-user" if is_user else "download.confirm"
+        msg = t(
+            confirm_key,
+            kind=self.kind,
+            name=name,
+            source_type=source_type,
+            version=version,
+            repo=repo,
+        )
+        print(f"[YAL]{msg}", end="")
+        print(t("common.confirm-prompt"), end="", flush=True)
+        try:
+            answer = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        return answer in yes_variants()
 
 
-def _is_installed(entry: TemplateEntry, name: str, version: str) -> bool:
-    if entry.is_user:
-        return user_store.user_is_installed(KIND, name, version)
-    return store.is_installed(KIND, name, version)
-
-
-def _get_most_recent_local(entry: TemplateEntry, name: str) -> str | None:
-    if entry.is_user:
-        return user_store.user_get_most_recent_local(KIND, name)
-    return store.get_most_recent_local(KIND, name)
-
-
-def _save_meta(
-    entry: TemplateEntry,
-    name: str,
-    version: str,
-    source: str,
-) -> None:
-    if entry.is_user:
-        user_store.user_save_meta(KIND, name, version, source, entry.repo)  # type: ignore[arg-type]
-    else:
-        store.save_meta(KIND, name, version, source, entry.repo)  # type: ignore[arg-type]
-
-
-# ── утилиты (используются также из update.py) ─────────────────────────────────
+# ── Утилиты ──────────────────────────────────────────────────────────────────
 
 def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
     try:
@@ -200,30 +209,3 @@ def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
     except Exception as e:
         print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
         return []
-
-
-def _confirm_download(
-    kind: str,
-    name: str,
-    version: str,
-    source_type: str,
-    repo: str,
-    is_user: bool = False,
-) -> bool:
-    confirm_key = "download.confirm-user" if is_user else "download.confirm"
-    msg = t(
-        confirm_key,
-        kind=kind,
-        name=name,
-        source_type=source_type,
-        version=version,
-        repo=repo,
-    )
-    print(f"[YAL]{msg}", end="")
-    print(t("common.confirm-prompt"), end="", flush=True)
-    try:
-        answer = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return False
-    return answer in yes_variants()

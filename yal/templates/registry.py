@@ -61,7 +61,6 @@ def get_entry(kind: str, name: str) -> TemplateEntry:
     if user_entry is not None:
         return user_entry
 
-    # 3. Понятное сообщение об ошибке
     builtin_names = list((registry or {}).keys())
     user_names = _ur.list_names(kind)
     available = ", ".join(sorted(set(builtin_names + user_names))) or "—"

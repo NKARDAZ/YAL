@@ -19,19 +19,15 @@ from pathlib import Path
 
 from yal import store, template_config, user_store
 from yal.i18n import t
-from yal.templates.book_handler import BookHandler
+from yal.templates.handler_def import HANDLERS
 from yal.templates.registry import TemplateEntry, get_entry, list_kinds
 from yal.yal_toml_writer import fill_yal_toml_origin
-
-_HANDLERS = {
-    "book": BookHandler(),
-}
 
 
 def run(args: argparse.Namespace) -> None:
     kind, name, ref = _parse_spec(args.what)
 
-    handler = _HANDLERS.get(kind)
+    handler = HANDLERS.get(kind)
     if handler is None:
         print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)

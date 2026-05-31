@@ -15,18 +15,15 @@ import sys
 
 from yal import github, store, user_store
 from yal.i18n import t
-from yal.templates.book_handler import BookHandler, _confirm_download, _fetch_releases_safe
+from yal.templates.handler import _fetch_releases_safe
+from yal.templates.handler_def import HANDLERS
 from yal.templates.registry import TemplateEntry, get_entry, list_kinds
-
-_HANDLERS = {
-    "book": BookHandler(),
-}
 
 
 def run(args: argparse.Namespace) -> None:
     kind, name = _parse_spec(args.what)
 
-    if kind not in _HANDLERS:
+    if kind not in HANDLERS:
         print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)
 
@@ -70,7 +67,7 @@ def _update_release(
     else:
         print(f"[YAL] {t('update.installing', kind=kind, name=name, version=version)}")
 
-    if not _confirm_download(kind, name, version, t("download.release"), entry.repo, entry.is_user):
+    if not HANDLERS[kind].confirm_download(name, version, t("download.release"), entry.repo, entry.is_user):
         raise RuntimeError(t("errors.cancelled", action=t("update.action")))
 
     dest = _template_dir(entry, kind, name, version)
@@ -98,7 +95,7 @@ def _update_commit(kind: str, name: str, entry: TemplateEntry) -> None:
     else:
         print(f"[YAL] {t('update.installing-commit', kind=kind, name=name, version=version)}")
 
-    if not _confirm_download(kind, name, version, t("download.commit"), entry.repo, entry.is_user):
+    if not HANDLERS[kind].confirm_download(name, version, t("download.commit"), entry.repo, entry.is_user):
         raise RuntimeError(t("errors.cancelled", action=t("update.action")))
 
     dest = _template_dir(entry, kind, name, version)
