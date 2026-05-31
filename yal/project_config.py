@@ -19,7 +19,7 @@ from yal.i18n import t
 YAL_PROJECT_TOML = "yal.toml"
 
 # Встроенные команды — их нельзя перекрыть из yal.toml
-BUILTIN_COMMANDS: frozenset[str] = frozenset({"create", "update", "add"})
+BUILTIN_COMMANDS: frozenset[str] = frozenset({"create", "update", "add", "remove"})
 
 
 # ─── модели ───────────────────────────────────────────────────────────────────

@@ -112,7 +112,7 @@ class GenericHandler:
         dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
         github.download_release(target, dest)
-        self._save_meta(entry, name, version, "release")
+        self._save_meta(entry, name, version, "release", target.released_at)
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
@@ -151,7 +151,7 @@ class GenericHandler:
                 from yal.github import _force_remove_readonly
                 _shutil.rmtree(dest, onexc=_force_remove_readonly)
             raise
-        self._save_meta(entry, name, version, "commit")
+        self._save_meta(entry, name, version, "commit", info.released_at)
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
@@ -177,12 +177,15 @@ class GenericHandler:
             return user_store.user_installed_versions(self.kind, name)
         return store.installed_versions(self.kind, name)
 
-    def _save_meta(self, entry: TemplateEntry, name: str, version: str, source: str) -> None:
+    def _save_meta(
+        self, entry: TemplateEntry, name: str, version: str,
+        source: str, released_at: str
+    ) -> None:
         src_literal = cast(SourceType, source)
         if entry.is_user:
-            user_store.user_save_meta(self.kind, name, version, src_literal, entry.repo)
+            user_store.user_save_meta(self.kind, name, version, src_literal, entry.repo, released_at)
         else:
-            store.save_meta(self.kind, name, version, src_literal, entry.repo)
+            store.save_meta(self.kind, name, version, src_literal, entry.repo, released_at)
 
     def confirm_download(
         self, name: str, version: str, source_type: str, repo: str, is_user: bool = False

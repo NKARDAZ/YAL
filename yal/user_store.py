@@ -45,11 +45,14 @@ def user_get_most_recent_local(kind: str, name: str) -> str | None:
     versions = user_installed_versions(kind, name)
     if not versions:
         return None
-    versions.sort(
-        key=lambda v: user_template_dir(kind, name, v).stat().st_mtime,
-        reverse=True,
-    )
-    return versions[0]
+
+    def _get_sort_key(v: str):
+        meta = json.loads(user_meta_path(kind, name, v).read_text())
+        is_commit = _looks_like_commit(v)
+        # Приоритет: релизы выше коммитов. Внутри групп — по дате.
+        return (not is_commit, meta.get("released_at", ""))
+
+    return sorted(versions, key=_get_sort_key, reverse=True)[0]
 
 
 def user_latest_release_version(kind: str, name: str) -> str | None:
@@ -67,27 +70,17 @@ def user_latest_release_version(kind: str, name: str) -> str | None:
 
 
 def user_save_meta(
-    kind: str,
-    name: str,
-    version: str,
-    source: Literal["release", "commit"],
-    repo: str,
+    kind: str, name: str, version: str, source: Literal["release", "commit"],
+    repo: str, released_at: str
 ) -> None:
     p = user_meta_path(kind, name, version)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
-        json.dumps(
-            {
-                "kind": kind,
-                "name": name,
-                "version": version,
-                "source": source,
-                "repo": repo,
-                "installed_at": datetime.now(timezone.utc).isoformat(),
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
+        json.dumps({
+            "kind": kind, "name": name, "version": version, "source": source,
+            "repo": repo, "released_at": released_at,
+            "installed_at": datetime.now(timezone.utc).isoformat(),
+        }, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 

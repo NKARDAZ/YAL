@@ -73,3 +73,12 @@ ask-excludes     = "Add exclude patterns for this template?"
 exclude-hint     = "Enter filenames/folders to exclude (one per line, empty line to finish):"
 excludes-saved   = "Excludes saved: {items}"
 registered       = "✓ Template '{kind}:{name}' registered and installed to: {path}"
+
+[remove]
+action         = "Removal"
+will-remove    = "The following will be removed"
+source-builtin = "built-in"
+source-user    = "user"
+confirm        = "Proceed with removal?"
+done           = "✓ Removed {count} version(s)."
+nothing-found  = "Nothing found matching that spec."

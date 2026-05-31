@@ -103,6 +103,28 @@ def add_entry(kind: str, name: str, repo: str, exclude: list[str]) -> None:
     USER_REGISTRY_PATH.write_text(_serialize(raw), encoding="utf-8")
 
 
+def remove_entry(kind: str, name: str) -> None:
+    """Удаляет запись из ~/.yal/user-templates.toml. Поиск без учёта регистра."""
+    if not USER_REGISTRY_PATH.exists():
+        return
+
+    with open(USER_REGISTRY_PATH, "rb") as f:
+        raw: dict[str, Any] = tomllib.load(f)
+
+    kind_data = raw.get(kind, {})
+    name_lower = name.lower()
+    key_to_remove = next((k for k in kind_data if k.lower() == name_lower), None)
+
+    if key_to_remove is None:
+        return
+
+    del kind_data[key_to_remove]
+    if not kind_data:
+        del raw[kind]
+
+    USER_REGISTRY_PATH.write_text(_serialize(raw), encoding="utf-8")
+
+
 def list_kinds() -> list[str]:
     return sorted(load_registry().keys())
 

@@ -1,11 +1,11 @@
 """
-Команда: yal add <kind>:<name> from <repository URL>
+Команда: yal add <kind>:<name>[@<ref>] from <repository URL>
 
 Регистрирует внешний шаблон из GitHub и скачивает его в
 ~/.yal/user-templates/<kind>/<name>/<version>/.
 
 Примеры:
-  yal add book:mytheme from https://github.com/user/my-book-template
+  yal add book:mytheme@0.4.1 from https://github.com/user/my-book-template
   yal add note:work from https://github.com/org/note-tpl
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import re
 
 from yal import github, user_store
 from yal.i18n import t, yes_variants
@@ -21,13 +22,12 @@ from yal.templates import user_registry
 
 
 def run(args: argparse.Namespace) -> None:
-    kind, name, repo = _parse_spec(args.what, args.repo)
+    kind, name, ref, repo = _parse_spec(args.what, args.repo)
 
     # Проверяем, не зарегистрирован ли уже
     existing = user_registry.get_entry(kind, name)
     if existing is not None and existing.repo == repo:
         print(f"[YAL] {t('add.already-registered', kind=kind, name=name)}")
-        # Всё равно предлагаем скачать свежую версию
     elif existing is not None:
         print(f"[YAL] {t('add.name-conflict', kind=kind, name=name, old_repo=existing.repo)}")
         print(t("common.confirm-prompt"), end="", flush=True)
@@ -43,7 +43,8 @@ def run(args: argparse.Namespace) -> None:
     entry = TemplateEntry(repo=repo, exclude=[])
 
     try:
-        version = _download(entry, kind, name)
+        # Передаем ref в _download
+        version = _download(entry, kind, name, ref)
     except (ValueError, RuntimeError) as e:
         print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
@@ -60,7 +61,6 @@ def run(args: argparse.Namespace) -> None:
 
 # ─── скачивание ───────────────────────────────────────────────────────────────
 
-
 def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
     try:
         return github.get_releases(repo)
@@ -69,22 +69,23 @@ def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
         return []
 
 
-def _download(entry: TemplateEntry, kind: str, name: str) -> str:
+def _download(entry: TemplateEntry, kind: str, name: str, ref: str | None) -> str:
     releases = _fetch_releases_safe(entry.repo)
     if releases:
-        return _download_release(entry, kind, name, releases)
+        return _download_release(entry, kind, name, ref, releases)
     else:
-        return _download_commit(entry, kind, name)
+        return _download_commit(entry, kind, name, ref)
 
 
 def _download_release(
-    entry: TemplateEntry,
-    kind: str,
-    name: str,
-    releases: list[github.ReleaseInfo],
+    entry: TemplateEntry, kind: str, name: str, ref: str | None, releases: list[github.ReleaseInfo]
 ) -> str:
-    latest = releases[0]
-    version = latest.tag.lstrip("vV")
+    # Логика выбора: по ref или новейший
+    target = releases[0] if (ref is None or ref == "latest") else next((r for r in releases if r.tag in (ref, f"v{ref}")), None)
+    if not target:
+        raise ValueError(f"Релиз {ref} не найден")
+
+    version = target.tag.lstrip("vV")
 
     if user_store.user_is_installed(kind, name, version):
         print(f"[YAL] {t('create.using-local', version=version)}")
@@ -94,23 +95,22 @@ def _download_release(
         raise RuntimeError(t("errors.cancelled", action=t("add.action")))
 
     dest = user_store.user_template_dir(kind, name, version)
-    print(f"[YAL] {t('download.release-downloading', tag=latest.tag)}")
-    github.download_release(latest, dest)
-    user_store.user_save_meta(kind, name, version, "release", entry.repo)
+    print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
+    github.download_release(target, dest)
+    # Сохраняем с датой релиза (предполагаем наличие released_at в ReleaseInfo из github.py)
+    user_store.user_save_meta(kind, name, version, "release", entry.repo, target.released_at)
     print(f"[YAL] {t('download.done', path=dest)}")
     return version
 
 
-def _download_commit(entry: TemplateEntry, kind: str, name: str) -> str:
+def _download_commit(entry: TemplateEntry, kind: str, name: str, ref: str | None) -> str:
     print(f"[YAL] {t('update.no-releases')}")
-
     try:
-        info = github.get_latest_commit(entry.repo)
+        info = github.get_latest_commit(entry.repo) if (ref is None or ref == "latest") else github.get_commit(entry.repo, ref)
     except Exception as e:
         raise RuntimeError(t("errors.commit-info-fail", error=e)) from e
 
     version = info.sha7
-
     if user_store.user_is_installed(kind, name, version):
         print(f"[YAL] {t('create.using-local', version=version)}")
         return version
@@ -128,18 +128,15 @@ def _download_commit(entry: TemplateEntry, kind: str, name: str) -> str:
             from yal.github import _force_remove_readonly
             _shutil.rmtree(dest, onexc=_force_remove_readonly)
         raise
-    user_store.user_save_meta(kind, name, version, "commit", entry.repo)
+    # Сохраняем с датой коммита
+    user_store.user_save_meta(kind, name, version, "commit", entry.repo, info.released_at)
     print(f"[YAL] {t('download.done', path=dest)}")
     return version
 
 
-# ─── диалог исключений ────────────────────────────────────────────────────────
+# ─── диалог исключений (без изменений) ────────────────────────────────────────
 
 def _ask_excludes() -> list[str]:
-    """
-    Спрашивает пользователя, хочет ли он добавить exclude-паттерны.
-    Возвращает список (без yal.template.toml — он глобальный).
-    """
     print(f"\n[YAL] {t('add.ask-excludes')}", end="")
     print(t("common.confirm-prompt"), end="", flush=True)
     try:
@@ -171,21 +168,8 @@ def _ask_excludes() -> list[str]:
 
 # ─── утилиты ──────────────────────────────────────────────────────────────────
 
-def _confirm_download(
-    kind: str,
-    name: str,
-    version: str,
-    source_type: str,
-    repo: str,
-) -> bool:
-    msg = t(
-        "download.confirm-user",
-        kind=kind,
-        name=name,
-        source_type=source_type,
-        version=version,
-        repo=repo,
-    )
+def _confirm_download(kind, name, version, source_type, repo) -> bool:
+    msg = t("download.confirm-user", kind=kind, name=name, source_type=source_type, version=version, repo=repo)
     print(f"[YAL]{msg}", end="")
     print(t("common.confirm-prompt"), end="", flush=True)
     try:
@@ -196,24 +180,15 @@ def _confirm_download(
     return answer in yes_variants()
 
 
-def _parse_spec(what: str, repo: str) -> tuple[str, str, str]:
-    """Разбирает '<kind>:<name>' и возвращает (kind, name, repo)."""
-    if ":" not in what:
+def _parse_spec(what: str, repo: str) -> tuple[str, str, str | None, str]:
+    pattern = r"^(?P<kind>[^:@]+):(?P<name>[^@]+)(?:@(?P<ref>.+))?$"
+    m = re.match(pattern, what.strip())
+    if not m:
         print(f"[YAL] {t('errors.parse-spec', spec=what)}")
-        print(f"      {t('errors.parse-spec-hint', fmt='<kind>:<name>')}")
-        sys.exit(1)
-
-    kind, _, name = what.partition(":")
-    kind = kind.strip().lower()
-    name = name.strip()   # регистр сохраняем как есть
-
-    if not kind or not name:
-        print(f"[YAL] {t('errors.parse-spec', spec=what)}")
-        print(f"      {t('errors.parse-spec-hint', fmt='<kind>:<name>')}")
         sys.exit(1)
 
     if not repo.startswith("https://github.com/"):
         print(f"[YAL] {t('add.invalid-repo', repo=repo)}")
         sys.exit(1)
 
-    return kind, name, repo
+    return m.group("kind").lower(), m.group("name"), m.group("ref"), repo

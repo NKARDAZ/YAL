@@ -9,6 +9,7 @@ from yal.commands import create as cmd_create
 from yal.commands import update as cmd_update
 from yal.commands import run as cmd_run
 from yal.commands import add as cmd_add
+from yal.commands import remove as cmd_remove
 from yal.project_config import BUILTIN_COMMANDS
 from yal.version import get_version
 
@@ -71,6 +72,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="GitHub repository URL",
     )
 
+    # ── remove ────────────────────────────────────────────────────────────────
+    p_remove = sub.add_parser("remove", help="Remove downloaded template(s)")
+    p_remove.add_argument(
+        "what",
+        help=(
+            "What to remove. Format: <kind>[:<name>[@<version>]]\n"
+            "Example: book  |  book:default  |  book:default@1.7.1"
+        ),
+    )
+
     return parser
 
 
@@ -94,6 +105,8 @@ def main() -> None:
                 cmd_update.run(args)
             elif args.command == "add":
                 cmd_add.run(args)
+            elif args.command == "remove":
+                cmd_remove.run(args)
             return
 
     if args_list:

@@ -20,11 +20,13 @@ TIMEOUT = 30
 class ReleaseInfo(NamedTuple):
     tag: str
     zipball_url: str
+    released_at: str
 
 
 class CommitInfo(NamedTuple):
     sha: str   # полный sha
     sha7: str  # первые 7 символов
+    released_at: str
 
 
 # ─── публичный API ────────────────────────────────────────────────────────────
@@ -35,7 +37,10 @@ def get_releases(repo: str) -> list[ReleaseInfo]:
     data = _gh_get(url)
     if isinstance(data, dict):
         return []
-    return [ReleaseInfo(tag=r["tag_name"], zipball_url=r["zipball_url"]) for r in data]
+    return [
+        ReleaseInfo(tag=r["tag_name"], zipball_url=r["zipball_url"], released_at=r["published_at"])
+        for r in data
+    ]
 
 
 def get_latest_commit(repo: str, branch: str = "HEAD") -> CommitInfo:
@@ -44,7 +49,8 @@ def get_latest_commit(repo: str, branch: str = "HEAD") -> CommitInfo:
     if not isinstance(data, dict):
         raise RuntimeError(f"Неожиданный ответ от GitHub: {data!r}")
     sha: str = data["sha"]
-    return CommitInfo(sha=sha, sha7=sha[:7])
+    date: str = data["commit"]["committer"]["date"]
+    return CommitInfo(sha=sha, sha7=sha[:7], released_at=date)
 
 
 def get_commit(repo: str, ref: str) -> CommitInfo:
@@ -54,7 +60,8 @@ def get_commit(repo: str, ref: str) -> CommitInfo:
     if not isinstance(data, dict):
         raise RuntimeError(f"Неожиданный ответ от GitHub: {data!r}")
     sha: str = data["sha"]
-    return CommitInfo(sha=sha, sha7=sha[:7])
+    date: str = data["commit"]["committer"]["date"]
+    return CommitInfo(sha=sha, sha7=sha[:7], released_at=date)
 
 
 def download_release(release: ReleaseInfo, dest: Path) -> None:
