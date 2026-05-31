@@ -187,7 +187,9 @@ def _parse_spec(what: str, repo: str) -> tuple[str, str, str | None, str]:
         print(f"[YAL] {t('errors.parse-spec', spec=what)}")
         sys.exit(1)
 
-    if not repo.startswith("https://github.com/"):
+    if re.match(r"^[^/]+/[^/]+$", repo.strip()):
+        repo = f"https://github.com/{repo.strip()}"
+    elif not repo.startswith("https://github.com/"):
         print(f"[YAL] {t('add.invalid-repo', repo=repo)}")
         sys.exit(1)
 

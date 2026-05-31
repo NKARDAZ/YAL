@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import sys
 from dataclasses import dataclass, field as dc_field
@@ -22,8 +23,17 @@ else:
     except ImportError:
         import tomli as tomllib  # type: ignore[no-redef]
 
+
 from yal.i18n import t, current_lang
 from yal import generators
+
+_tomli_w = None
+try:
+    import tomli_w as _tomli_w
+    _TOMLI_W_AVAILABLE = True
+except ImportError:
+    _tomli_w = None
+    _TOMLI_W_AVAILABLE = False
 
 YAL_TOML = "yal.template.toml"
 
@@ -160,11 +170,17 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
 
 def run_post_commands(commands: list[str], dest_dir: Path) -> None:
     """Исполняет команды в директории проекта."""
+    import platform
+    on_windows = platform.system() == "Windows"
     for cmd in commands:
         print(f"[YAL] {t('config.executing', name=cmd)}")
         try:
-            args = shlex.split(cmd)
-            subprocess.run(args, cwd=dest_dir, check=True)
+            if on_windows:
+                # На Windows .cmd/.bat-обёртки (npm, npx, pip и т.п.) не найдёт
+                # без shell=True — передаём строку напрямую
+                subprocess.run(cmd, cwd=dest_dir, check=True, shell=True)
+            else:
+                subprocess.run(shlex.split(cmd), cwd=dest_dir, check=True)
         except subprocess.CalledProcessError as e:
             print(f"[YAL] {t('config.executing-failed', name=cmd, error=e)}")
 
@@ -213,31 +229,138 @@ def apply(config: YalConfig, values: dict[str, Any], dest_dir: Path) -> None:
     """
     Применяет собранные значения к целевым файлам.
     Ведущий слэш в target.file воспринимается как корень создаваемого проекта.
+    Поддерживаемые форматы: yaml, json, toml, env.
     """
     for target in config.targets:
-        if target.format == "yaml":
-            relative_path = target.file.lstrip('\\/')
-            file_path = dest_dir / relative_path
+        relative_path = target.file.lstrip('\\/')
+        file_path = dest_dir / relative_path
 
-            if not file_path.exists():
-                print(f"[YAL] {t('config.target-not-found', path=file_path)}")
+        if not file_path.exists():
+            print(f"[YAL] {t('config.target-not-found', path=file_path)}")
+            continue
+
+        fmt = target.format.lower()
+        if fmt == "yaml":
+            _apply_yaml(target, values, file_path)
+        elif fmt == "json":
+            _apply_json(target, values, file_path)
+        elif fmt == "toml":
+            _apply_toml(target, values, file_path)
+        elif fmt == "env":
+            _apply_env(target, values, file_path)
+        else:
+            print(f"[YAL] {t('config.unknown-format', fmt=fmt, path=file_path)}")
+
+
+# ─── yaml ─────────────────────────────────────────────────────────────────────
+
+def _apply_yaml(target: "TargetDef", values: dict[str, Any], file_path: Path) -> None:
+    raw_text = file_path.read_text(encoding='utf-8')
+    protected = _protect_unicode_escapes(raw_text)
+    data = yaml_parser.load(protected)
+
+    for m in target.mappings:
+        should_set, val = _resolve_mapping(m, values)
+        if should_set:
+            _set_nested_path(data, m.key, val)
+
+    buf = io.StringIO()
+    yaml_parser.dump(data, buf)
+    file_path.write_text(
+        _restore_unicode_escapes(buf.getvalue()),
+        encoding='utf-8',
+    )
+
+
+# ─── json ─────────────────────────────────────────────────────────────────────
+
+def _apply_json(target: "TargetDef", values: dict[str, Any], file_path: Path) -> None:
+    raw_text = file_path.read_text(encoding='utf-8')
+    data = json.loads(raw_text)
+
+    for m in target.mappings:
+        should_set, val = _resolve_mapping(m, values)
+        if should_set:
+            # JSON null: наш маркер уже разрешён в None через _resolve_mapping
+            _set_nested_path(data, m.key, val)
+
+    file_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding='utf-8',
+    )
+
+
+# ─── toml ─────────────────────────────────────────────────────────────────────
+
+def _apply_toml(target: "TargetDef", values: dict[str, Any], file_path: Path) -> None:
+    if not _TOMLI_W_AVAILABLE or _tomli_w is None:
+        print(f"[YAL] {t('config.toml-write-unavailable', path=file_path)}")
+        return
+
+    with open(file_path, "rb") as f:
+        data = tomllib.load(f)
+
+    for m in target.mappings:
+        should_set, val = _resolve_mapping(m, values)
+        if should_set:
+            if val is not None:
+                _set_nested_path(data, m.key, val)
+
+    file_path.write_bytes(_tomli_w.dumps(data).encode('utf-8'))
+
+
+# ─── env ──────────────────────────────────────────────────────────────────────
+
+def _apply_env(target: "TargetDef", values: dict[str, Any], file_path: Path) -> None:
+    """
+    Записывает/обновляет пары KEY=value в .env-файле.
+    key в mappings — это имя переменной (напр. "APP_NAME" или "VITE_API_URL").
+    Dot-нотация не поддерживается: .env плоский по определению.
+    Существующие строки обновляются на месте, новые добавляются в конец.
+    Комментарии и пустые строки сохраняются.
+    """
+    lines: list[str] = []
+    if file_path.exists():
+        lines = file_path.read_text(encoding='utf-8').splitlines()
+
+    updates: dict[str, str | None] = {}
+    for m in target.mappings:
+        should_set, val = _resolve_mapping(m, values)
+        if should_set:
+            key = m.key.split(".")[-1]  # dot-нотацию игнорируем, берём последний сегмент
+            updates[key] = val
+
+    written: set[str] = set()
+    result: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            result.append(line)
+            continue
+        if "=" in stripped:
+            env_key = stripped.split("=", 1)[0].strip()
+            if env_key in updates:
+                val = updates[env_key]
+                result.append(f'{env_key}={_env_quote(val)}' if val is not None else f'# {env_key}=')
+                written.add(env_key)
                 continue
+        result.append(line)
 
-            raw_text = file_path.read_text(encoding='utf-8')
-            protected = _protect_unicode_escapes(raw_text)
-            data = yaml_parser.load(protected)
+    # Добавляем новые ключи, которых не было в файле
+    for key, val in updates.items():
+        if key not in written:
+            result.append(f'{key}={_env_quote(val)}' if val is not None else f'# {key}=')
 
-            for m in target.mappings:
-                should_set, val = _resolve_mapping(m, values)
-                if should_set:
-                    _set_yaml_path(data, m.key, val)
+    file_path.write_text("\n".join(result) + "\n", encoding='utf-8')
 
-            buf = io.StringIO()
-            yaml_parser.dump(data, buf)
-            file_path.write_text(
-                _restore_unicode_escapes(buf.getvalue()),
-                encoding='utf-8',
-            )
+
+def _env_quote(value: str) -> str:
+    """Оборачивает значение в кавычки если содержит пробелы или спецсимволы."""
+    if any(c in value for c in (' ', '\t', '"', "'", '#', '$', '`', '\\')):
+        escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+        return f'"{escaped}"'
+    return value
 
 
 def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> tuple[bool, Any]:
@@ -268,7 +391,7 @@ def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> tuple[boo
     return True, raw_val
 
 
-def _set_yaml_path(data: dict, key_path: str, value: str) -> None:
+def _set_nested_path(data: dict, key_path: str, value: Any) -> None:
     segments = _parse_key_path(key_path)
     node = data
     for i, seg in enumerate(segments[:-1]):
