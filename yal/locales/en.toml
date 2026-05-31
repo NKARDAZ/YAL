@@ -45,6 +45,8 @@ target-not-found = "Error: target file {path} not found."
 field-required   = "This field is required."
 field-select-hint = "Enter one of: {options}"
 field-invalid-option = "Invalid option. Available: {options}"
+executing = "Executing: {name}"
+executing-failed = "Command failed: {name}. Error: {error}"
 
 [project]
 no-toml                      = "yal.toml not found. Custom commands must be defined in this file."

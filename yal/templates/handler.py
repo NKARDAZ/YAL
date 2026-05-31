@@ -41,13 +41,22 @@ class GenericHandler:
         folder_name = custom_folder_name if custom_folder_name else f"{label}-{version}"
         dest = output_dir / folder_name
 
+        from yal import template_config
+        config = template_config.load(src)
+
+        combined_exclude = list(entry.exclude)
+        if config and config.exclude:
+            for item in config.exclude:
+                if item not in combined_exclude:
+                    combined_exclude.append(item)
+
         if dest.exists():
             shutil.rmtree(dest)
 
         shutil.copytree(
             src,
             dest,
-            ignore=shutil.ignore_patterns("yal-meta.json", "yal.template.toml", *entry.exclude),
+            ignore=shutil.ignore_patterns("yal-meta.json", "yal.template.toml", *combined_exclude),
         )
         return CreateResult(dest=dest, version=version)
 

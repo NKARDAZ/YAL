@@ -11,6 +11,8 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Any
 from ruamel.yaml import YAML
+import subprocess
+import shlex
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -94,6 +96,8 @@ class YalConfig:
     fields: list[FieldDef]
     targets: list[TargetDef]
     messages: dict[str, dict[str, dict[str, str]]]
+    post_commands: list[str] = dc_field(default_factory=list)
+    exclude: list[str] = dc_field(default_factory=list)
 
 
 # ─── загрузка ─────────────────────────────────────────────────────────────────
@@ -142,7 +146,25 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
                 for fid, msg in data.items()
             }
 
-    return YalConfig(min_version=meta.get("yal-min-version", "0.0.0"), fields=fields, targets=targets, messages=messages)
+    return YalConfig(
+        min_version=meta.get("yal-min-version", "0.0.0"),
+        fields=fields,
+        targets=targets,
+        messages=messages,
+        post_commands=meta.get("post-commands", []),
+        exclude=meta.get("exclude", [])
+    )
+
+
+def run_post_commands(commands: list[str], dest_dir: Path) -> None:
+    """Исполняет команды в директории проекта."""
+    for cmd in commands:
+        print(f"[YAL] {t('config.executing', name=cmd)}")
+        try:
+            args = shlex.split(cmd)
+            subprocess.run(args, cwd=dest_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[YAL] {t('config.executing-failed', name=cmd, error=e)}")
 
 
 # ─── интерактивный сбор ───────────────────────────────────────────────────────

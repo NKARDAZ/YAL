@@ -45,6 +45,8 @@ target-not-found = "Ошибка: целевой файл {path} не найде
 field-required   = "Поле обязательно."
 field-select-hint = "Введите один из вариантов: {options}"
 field-invalid-option = "Недопустимый вариант. Доступные: {options}"
+executing = "Выполнение: {name}"
+executing-failed = "Выполнение неудалось: {name}. Ошибка: {error}"
 
 [project]
 no-toml                      = "yal.toml не найден. Пользовательские команды должны быть объвлены в этом файле."

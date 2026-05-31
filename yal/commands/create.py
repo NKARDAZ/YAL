@@ -68,6 +68,8 @@ def run(args: argparse.Namespace) -> None:
         if config is not None:
             template_config.apply(config, values, result.dest)
             fill_yal_toml_origin(result.dest, template=kind, template_version=result.version)
+            if config.post_commands:
+                template_config.run_post_commands(config.post_commands, result.dest)
         else:
             print(f"[YAL] {t('config.no-config')}")
 
