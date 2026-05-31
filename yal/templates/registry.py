@@ -6,6 +6,7 @@
   {
     "repo":    str,        # ссылка на GitHub-репозиторий
     "exclude": list[str],  # файлы/папки, которые не копируются при create
+    "is_user": bool,       # True → пользовательский шаблон (user_store)
   }
 
 BOOK_REGISTRY["default"] — шаблон, используемый при `yal create book`
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 class TemplateEntry:
     repo: str
     exclude: list[str] = field(default_factory=list)
+    is_user: bool = False   # True для шаблонов из user_registry
 
 
 # ── Реестр шаблонов для типа "book" ──────────────────────────────────────────
@@ -33,7 +35,6 @@ BOOK_REGISTRY: dict[str, TemplateEntry] = {
 }
 
 # ── Общий реестр: тип → его реестр шаблонов ──────────────────────────────────
-# При добавлении нового типа достаточно добавить его сюда.
 
 KIND_REGISTRIES: dict[str, dict[str, TemplateEntry]] = {
     "book": BOOK_REGISTRY,
@@ -43,21 +44,44 @@ KIND_REGISTRIES: dict[str, dict[str, TemplateEntry]] = {
 def get_entry(kind: str, name: str) -> TemplateEntry:
     """
     Вернуть запись реестра для (kind, name).
-    Бросает ValueError с понятным сообщением если не найдено.
+    kind всегда lowercase. name сравнивается без учёта регистра,
+    но в хранилище и meta.json остаётся оригинальный регистр.
+    Бросает ValueError если не найдено.
     """
+    # 1. Встроенный реестр (case-insensitive по name)
     registry = KIND_REGISTRIES.get(kind)
-    if registry is None:
-        available = ", ".join(KIND_REGISTRIES.keys())
-        raise ValueError(f"Неизвестный тип: '{kind}'. Доступные: {available}")
+    if registry is not None:
+        entry = _iget(registry, name)
+        if entry is not None:
+            return entry
 
-    entry = registry.get(name)
-    if entry is None:
-        available = ", ".join(registry.keys())
-        raise ValueError(
-            f"Шаблон '{name}' не найден для '{kind}'. Доступные: {available}"
-        )
+    # 2. Пользовательский реестр
+    from yal.templates import user_registry as _ur
+    user_entry = _ur.get_entry(kind, name)
+    if user_entry is not None:
+        return user_entry
 
-    return entry
+    # 3. Понятное сообщение об ошибке
+    builtin_names = list((registry or {}).keys())
+    user_names = _ur.list_names(kind)
+    available = ", ".join(sorted(set(builtin_names + user_names))) or "—"
+
+    if registry is None and not user_names:
+        available_kinds = ", ".join(list_kinds() + _ur.list_kinds())
+        raise ValueError(f"Неизвестный тип: '{kind}'. Доступные: {available_kinds or '—'}")
+
+    raise ValueError(
+        f"Шаблон '{name}' не найден для '{kind}'. Доступные: {available}"
+    )
+
+
+def _iget(d: dict[str, TemplateEntry], name: str) -> TemplateEntry | None:
+    """Case-insensitive dict lookup."""
+    name_lower = name.lower()
+    for key, val in d.items():
+        if key.lower() == name_lower:
+            return val
+    return None
 
 
 def list_kinds() -> list[str]:

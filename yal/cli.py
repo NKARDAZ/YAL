@@ -8,6 +8,7 @@ import sys
 from yal.commands import create as cmd_create
 from yal.commands import update as cmd_update
 from yal.commands import run as cmd_run
+from yal.commands import add as cmd_add
 from yal.project_config import BUILTIN_COMMANDS
 from yal.version import get_version
 
@@ -53,6 +54,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # ── add ──────────────────────────────────────────────────────────────────
+    p_add = sub.add_parser("add", help="Register an external template from GitHub")
+    p_add.add_argument(
+        "what",
+        help="Template to register. Format: <kind>:<name>",
+    )
+    p_add.add_argument(
+        "from_kw",
+        metavar="from",
+        help="Keyword 'from'",
+    )
+    p_add.add_argument(
+        "repo",
+        metavar="URL",
+        help="GitHub repository URL",
+    )
+
     return parser
 
 
@@ -74,6 +92,8 @@ def main() -> None:
                 cmd_create.run(args)
             elif args.command == "update":
                 cmd_update.run(args)
+            elif args.command == "add":
+                cmd_add.run(args)
             return
 
     if args_list:

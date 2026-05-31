@@ -6,7 +6,7 @@
 
 - `yal create <kind>[:<name>][@<ref>]` — uses a template to create a new project (currently supports only `book` kind)
 - `yal update <kind>[:<name>]` — updates an existing project (currently supports only `book` kind)
-- `yal add <kind>:<repository URL> as <name>` — registers an external template from GitHub with the specified name
+- `yal add <kind>:<name> from <repository URL>` — registers an external template from GitHub with the specified name
 
 ## Create a project
 Downloads the template (if not cached locally) and initiates the configuration process.

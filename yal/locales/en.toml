@@ -31,7 +31,8 @@ no-releases       = "Repository has no releases — will clone."
 commit-fail       = "Could not get latest commit: {error}"
 
 [download]
-confirm   = "\nTemplate '{kind}:{name}' ({source_type} {version}) not found locally.\n      Source: {repo}\n      Install to ~/.yal/templates/{kind}/{version}/?"
+confirm      = "\nTemplate '{kind}:{name}' ({source_type} {version}) not found locally.\n      Source: {repo}\n      Install to ~/.yal/templates/{kind}/{name}/{version}/?"
+confirm-user = "\nTemplate '{kind}:{name}' ({source_type} {version}) not found locally.\n      Source: {repo}\n      Install to ~/.yal/user-templates/{kind}/{name}/{version}/?"
 release   = "release"
 commit    = "commit"
 release-downloading = "Downloading release {tag}…"
@@ -62,3 +63,13 @@ macro-loop                   = "Circular macro dependency: '{name}'."
 arg-unknown                  = "Command '{name}' does not accept argument '{flag}'.\n      Available: {available}"
 arg-none                     = "(none)"
 arg-invalid-value            = "Invalid value '{value}' for '{flag}'.\n      Allowed: {choices}"
+
+[add]
+action           = "Registration"
+already-registered = "Template '{kind}:{name}' is already registered with this repository."
+name-conflict    = "Template '{kind}:{name}' is already registered with a different repository:\n      {old_repo}\n      Overwrite?"
+invalid-repo     = "Repository URL must start with https://github.com/ — got: {repo}"
+ask-excludes     = "Add exclude patterns for this template?"
+exclude-hint     = "Enter filenames/folders to exclude (one per line, empty line to finish):"
+excludes-saved   = "Excludes saved: {items}"
+registered       = "✓ Template '{kind}:{name}' registered and installed to: {path}"

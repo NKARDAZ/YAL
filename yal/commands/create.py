@@ -7,6 +7,7 @@
   yal create book@1.7.1
   yal create book@c651f7d
   yal create book:default@1.7.1
+  yal create book:mytheme
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ import re
 import sys
 from pathlib import Path
 
+from yal import store, template_config, user_store
 from yal.i18n import t
-from yal.templates.registry import get_entry, list_kinds
 from yal.templates.book_handler import BookHandler
-from yal import store, template_config
+from yal.templates.registry import TemplateEntry, get_entry, list_kinds
 from yal.yal_toml_writer import fill_yal_toml_origin
 
 _HANDLERS = {
@@ -37,15 +38,15 @@ def run(args: argparse.Namespace) -> None:
 
     try:
         entry = get_entry(kind, name)
-    except ValueError:
-        print(f"[YAL] {t('errors.unknown-template', name=name, kind=kind, available=', '.join(list_kinds()))}")
+    except ValueError as e:
+        print(f"[YAL] {e}")
         sys.exit(1)
 
     output_dir = Path(args.output).resolve()
 
     # 1. Получаем версию и загружаем конфигурацию до создания папок
     version = handler._resolve_version(entry, name, ref)
-    src_dir = store.template_dir(kind, version)
+    src_dir = _src_dir(entry, kind, name, version)
     config = template_config.load(src_dir)
 
     values = {}
@@ -57,13 +58,13 @@ def run(args: argparse.Namespace) -> None:
         folder_name = template_config.get_folder_name(config, values)
 
     try:
-        # 3. Создаем структуру проекта с учетом имени
+        # 3. Создаём структуру проекта
         result = handler.create(
             entry=entry,
             name=name,
             output_dir=output_dir,
             ref=ref,
-            custom_folder_name=folder_name
+            custom_folder_name=folder_name,
         )
 
         if config is not None:
@@ -79,6 +80,13 @@ def run(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _src_dir(entry: TemplateEntry, kind: str, name: str, version: str) -> Path:
+    """Путь к исходникам шаблона в зависимости от типа реестра."""
+    if entry.is_user:
+        return user_store.user_template_dir(kind, name, version)
+    return store.template_dir(kind, name, version)
+
+
 def _parse_spec(spec: str) -> tuple[str, str, str | None]:
     pattern = r"^(?P<kind>[^:@]+)(?::(?P<name>[^@]+))?(?:@(?P<ref>.+))?$"
     m = re.match(pattern, spec.strip())
@@ -88,6 +96,6 @@ def _parse_spec(spec: str) -> tuple[str, str, str | None]:
         sys.exit(1)
 
     kind = m.group("kind").lower()
-    name = (m.group("name") or "default").lower()
+    name = m.group("name") or "default"   # регистр сохраняем как есть
     ref = m.group("ref") or None
     return kind, name, ref
