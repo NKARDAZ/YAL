@@ -26,19 +26,19 @@ def run(args: argparse.Namespace) -> None:
     kind, name = _parse_spec(args.what)
 
     if kind not in _HANDLERS:
-        print(f"[yal] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
+        print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)
 
     try:
         entry = get_entry(kind, name)
     except ValueError:
-        print(f"[yal] {t('errors.unknown-template', name=name, kind=kind, available=', '.join(list_kinds()))}")
+        print(f"[YAL] {t('errors.unknown-template', name=name, kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)
 
     try:
         _update(kind, name, entry)
     except (ValueError, RuntimeError) as e:
-        print(f"[yal] {t('create.error', error=e)}")
+        print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
 
 
@@ -60,23 +60,23 @@ def _update_release(
     version = latest.tag.lstrip("vV")
 
     if store.is_installed(kind, version):
-        print(f"[yal] {t('update.already-latest', version=version)}")
+        print(f"[YAL] {t('update.already-latest', version=version)}")
         return
 
     local = store.latest_release_version(kind)
     if local:
-        print(f"[yal] {t('update.upgrading', kind=kind, name=name, old=local, new=version)}")
+        print(f"[YAL] {t('update.upgrading', kind=kind, name=name, old=local, new=version)}")
     else:
-        print(f"[yal] {t('update.installing', kind=kind, name=name, version=version)}")
+        print(f"[YAL] {t('update.installing', kind=kind, name=name, version=version)}")
 
     if not _confirm_download(kind, name, version, t("download.release"), entry.repo):
         raise RuntimeError(t("errors.cancelled", action=t("update.action")))
 
     dest = store.template_dir(kind, version)
-    print(f"[yal] {t('download.release-downloading', tag=latest.tag)}")
+    print(f"[YAL] {t('download.release-downloading', tag=latest.tag)}")
     github.download_release(latest, dest)
     store.save_meta(kind, version, "release", entry.repo)
-    print(f"[yal] {t('update.installed', path=dest)}")
+    print(f"[YAL] {t('update.installed', path=dest)}")
 
 
 def _update_commit(kind: str, name: str, entry) -> None:
@@ -88,29 +88,29 @@ def _update_commit(kind: str, name: str, entry) -> None:
     version = info.sha7
 
     if store.is_installed(kind, version):
-        print(f"[yal] {t('update.already-latest-commit', version=version)}")
+        print(f"[YAL] {t('update.already-latest-commit', version=version)}")
         return
 
     local_versions = store.installed_versions(kind)
     if local_versions:
-        print(f"[yal] {t('update.upgrading-commit', kind=kind, name=name, old=local_versions[-1], new=version)}")
+        print(f"[YAL] {t('update.upgrading-commit', kind=kind, name=name, old=local_versions[-1], new=version)}")
     else:
-        print(f"[yal] {t('update.installing-commit', kind=kind, name=name, version=version)}")
+        print(f"[YAL] {t('update.installing-commit', kind=kind, name=name, version=version)}")
 
     if not _confirm_download(kind, name, version, t("download.commit"), entry.repo):
         raise RuntimeError(t("errors.cancelled", action=t("update.action")))
 
     dest = store.template_dir(kind, version)
-    print(f"[yal] {t('download.commit-cloning', version=version)}")
+    print(f"[YAL] {t('download.commit-cloning', version=version)}")
     github.clone_repo(entry.repo, dest, ref=info.sha)
     store.save_meta(kind, version, "commit", entry.repo)
-    print(f"[yal] {t('update.installed', path=dest)}")
+    print(f"[YAL] {t('update.installed', path=dest)}")
 
 
 def _parse_spec(spec: str) -> tuple[str, str]:
     m = re.match(r"^(?P<kind>[^:@]+)(?::(?P<name>[^@]+))?$", spec.strip())
     if not m:
-        print(f"[yal] {t('errors.parse-spec', spec=spec)}")
+        print(f"[YAL] {t('errors.parse-spec', spec=spec)}")
         print(f"      {t('errors.parse-spec-hint', fmt='<kind>[:<name>]')}")
         sys.exit(1)
 

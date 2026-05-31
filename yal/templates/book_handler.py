@@ -56,13 +56,13 @@ class BookHandler:
     ) -> str:
         if ref:
             if store.is_installed(KIND, ref):
-                print(f"[yal] {t('create.using-local', version=ref)}")
+                print(f"[YAL] {t('create.using-local', version=ref)}")
                 return ref
             return self._download(entry, name, ref)
 
         recent = store.get_most_recent_local(KIND)
         if recent:
-            print(f"[yal] {t('create.using-local', version=recent)}")
+            print(f"[YAL] {t('create.using-local', version=recent)}")
             return recent
 
         return self._download(entry, name, ref)
@@ -103,10 +103,10 @@ class BookHandler:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
 
         dest = store.template_dir(KIND, version)
-        print(f"[yal] {t('download.release-downloading', tag=target.tag)}")
+        print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
         github.download_release(target, dest)
         store.save_meta(KIND, version, "release", entry.repo)
-        print(f"[yal] {t('download.done', path=dest)}")
+        print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
     def _download_commit(
@@ -115,7 +115,7 @@ class BookHandler:
         name: str,
         ref: str | None,
     ) -> str:
-        print(f"[yal] {t('update.no-releases')}")
+        print(f"[YAL] {t('update.no-releases')}")
 
         try:
             if ref is None or ref == "latest":
@@ -131,7 +131,7 @@ class BookHandler:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
 
         dest = store.template_dir(KIND, version)
-        print(f"[yal] {t('download.commit-cloning', version=version)}")
+        print(f"[YAL] {t('download.commit-cloning', version=version)}")
         try:
             github.clone_repo(entry.repo, dest, ref=info.sha)
         except Exception:
@@ -141,7 +141,7 @@ class BookHandler:
                 _shutil.rmtree(dest, onexc=_force_remove_readonly)
             raise
         store.save_meta(KIND, version, "commit", entry.repo)
-        print(f"[yal] {t('download.done', path=dest)}")
+        print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
 
@@ -151,7 +151,7 @@ def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
     try:
         return github.get_releases(repo)
     except Exception as e:
-        print(f"[yal] {t('errors.no-releases-warn', error=e)}")
+        print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
         return []
 
 
@@ -170,7 +170,7 @@ def _confirm_download(
         version=version,
         repo=repo,
     )
-    print(f"[yal]{msg}", end="")
+    print(f"[YAL]{msg}", end="")
     print(t("common.confirm-prompt"), end="", flush=True)
     try:
         answer = input().strip().lower()

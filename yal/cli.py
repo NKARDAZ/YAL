@@ -7,13 +7,24 @@ import sys
 
 from yal.commands import create as cmd_create
 from yal.commands import update as cmd_update
+from yal.commands import run as cmd_run
+from yal.project_config import BUILTIN_COMMANDS
+from yal.version import get_version
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="yal",
-        description="Yalla Nkardaz’s personal CLI toolkit",
+        description="Yalla Nkardaz's personal CLI toolkit",
     )
+
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"YAL {get_version()}",
+        help="Show utility’s version number and exit"
+    )
+
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     # ── create ───────────────────────────────────────────────────────────────
@@ -46,15 +57,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    args_list = sys.argv[1:]
+    flags = [arg for arg in args_list if arg.startswith("-")]
+    command_args = [arg for arg in args_list if not arg.startswith("-")]
+
     parser = build_parser()
-    args = parser.parse_args()
+    parser.parse_known_args(flags)
 
-    if args.command is None:
+    if command_args:
+        command = command_args[0].lower()
+
+        # Встроенные команды
+        if command in BUILTIN_COMMANDS:
+            args = parser.parse_args(args_list)
+            if args.command == "create":
+                cmd_create.run(args)
+            elif args.command == "update":
+                cmd_update.run(args)
+            return
+
+    if args_list:
+        cmd_run.run_from_argv(args_list)
+    else:
         parser.print_help()
-        sys.exit(0)
-
-    if args.command == "create":
-        cmd_create.run(args)
-
-    if args.command == "update":
-        cmd_update.run(args)

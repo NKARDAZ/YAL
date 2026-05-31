@@ -28,7 +28,7 @@ class TemplateEntry:
 BOOK_REGISTRY: dict[str, TemplateEntry] = {
     "default": TemplateEntry(
         repo="https://github.com/DemerNkardaz/Typst-Book-Template",
-        exclude=["README.md", "LICENSE", "TODO.md", "yal.toml"],
+        exclude=["README.md", "LICENSE", "TODO.md", "yal.template.toml"],
     ),
 }
 

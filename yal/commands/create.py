@@ -20,6 +20,7 @@ from yal.i18n import t
 from yal.templates.registry import get_entry, list_kinds
 from yal.templates.book_handler import BookHandler
 from yal import store, template_config
+from yal.yal_toml_writer import fill_yal_toml_origin
 
 _HANDLERS = {
     "book": BookHandler(),
@@ -31,13 +32,13 @@ def run(args: argparse.Namespace) -> None:
 
     handler = _HANDLERS.get(kind)
     if handler is None:
-        print(f"[yal] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
+        print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)
 
     try:
         entry = get_entry(kind, name)
     except ValueError:
-        print(f"[yal] {t('errors.unknown-template', name=name, kind=kind, available=', '.join(list_kinds()))}")
+        print(f"[YAL] {t('errors.unknown-template', name=name, kind=kind, available=', '.join(list_kinds()))}")
         sys.exit(1)
 
     output_dir = Path(args.output).resolve()
@@ -65,16 +66,16 @@ def run(args: argparse.Namespace) -> None:
             custom_folder_name=folder_name
         )
 
-        # 4. Применяем настройки (запись значений в файлы)
         if config is not None:
             template_config.apply(config, values, result.dest)
+            fill_yal_toml_origin(result.dest, template=kind, template_version=result.version)
         else:
-            print(f"[yal] {t('config.no-config')}")
+            print(f"[YAL] {t('config.no-config')}")
 
-        print(f"[yal] {t('create.created', path=result.dest)}")
+        print(f"[YAL] {t('create.created', path=result.dest)}")
 
     except (ValueError, RuntimeError) as e:
-        print(f"[yal] {t('create.error', error=e)}")
+        print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
 
 
@@ -82,7 +83,7 @@ def _parse_spec(spec: str) -> tuple[str, str, str | None]:
     pattern = r"^(?P<kind>[^:@]+)(?::(?P<name>[^@]+))?(?:@(?P<ref>.+))?$"
     m = re.match(pattern, spec.strip())
     if not m:
-        print(f"[yal] {t('errors.parse-spec', spec=spec)}")
+        print(f"[YAL] {t('errors.parse-spec', spec=spec)}")
         print(f"      {t('errors.parse-spec-hint', fmt='<kind>[:<name>][@<ref>]')}")
         sys.exit(1)
 

@@ -1,5 +1,5 @@
 """
-Обработка yal.toml — конфигурационного файла шаблона.
+Обработка yal.template.toml — конфигурационного файла шаблона.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ else:
 from yal.i18n import t, current_lang
 from yal import generators
 
-YAL_TOML = "yal.toml"
+YAL_TOML = "yal.template.toml"
 
 # ─── защита \uXXXX при round-trip чтении/записи YAML ─────────────────────────
 # ruamel.yaml раскрывает \uXXXX → символ ещё на этапе load().
@@ -147,7 +147,7 @@ def collect(config: YalConfig) -> dict[str, str]:
 def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
     while True:
         display_default = f" [{default}]" if default else ""
-        print(f"[yal] {prompt_text}{display_default}: ", end="", flush=True)
+        print(f"[YAL] {prompt_text}{display_default}: ", end="", flush=True)
         try:
             raw = input().strip()
         except (EOFError, KeyboardInterrupt):
@@ -179,7 +179,7 @@ def apply(config: YalConfig, values: dict[str, Any], dest_dir: Path) -> None:
             file_path = dest_dir / relative_path
 
             if not file_path.exists():
-                print(f"[yal] {t('config.target-not-found', path=file_path)}")
+                print(f"[YAL] {t('config.target-not-found', path=file_path)}")
                 continue
 
             raw_text = file_path.read_text(encoding='utf-8')
