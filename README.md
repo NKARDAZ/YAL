@@ -4,9 +4,10 @@
 
 ## Commands
 
-- `yal create <kind>[:<name>][@<ref>]` — uses a template to create a new project (currently supports only `book` kind)
-- `yal update <kind>[:<name>]` — updates an existing project (currently supports only `book` kind)
-- `yal add <kind>:<name> from <repository URL>` — registers an external template from GitHub with the specified name
+- `yal create <kind>[:<name>][@<ref>]` — uses a template to create a new project, if name is not specified, the “default” template will be used
+- `yal update <kind>[:<name>]` — updates an existing project
+- `yal add <kind>:<name>[@<ref>] from <repository URL>` — registers an external template from GitHub with the specified name
+- `yal remove <kind>[:<name>][@<ref>]` — removes a template from the local storage, if name is not specified, the all templates of kind will be removed
 
 ## Create a project
 Downloads the template (if not cached locally) and initiates the configuration process.
@@ -141,4 +142,37 @@ A template for creating a book using [Typst](https://typst.app/), including a pr
 Requires installation of the [Typst compiler](https://github.com/typst/typst/releases) and the Python packages `pyyaml`, `pikepdf`, and `pillow`.
 ```bash
 pip install pyyaml pikepdf pillow
+```
+
+
+## Example of a custom template
+
+Registering a custom template:
+
+```bash
+yal add vue:default from https://github.com/<your username>/my-awesome-vue-template
+```
+
+Now you’ve register new `kind` and the `default` template for it. Then you can create a new project:
+
+```bash
+yal create vue
+```
+
+Done.
+
+If you will add a `yal.template.toml` file to the template, it will be used as a prompt for creating a new project. Minimal example:
+
+```toml
+[meta]
+yal-min-version = "0.1.1"
+
+[[fields]]
+id             = "vue-project-name"
+type           = "text"
+required       = true
+is-folder-name = true
+
+[messages]
+vue-project-name.prompt = "Enter project name"
 ```

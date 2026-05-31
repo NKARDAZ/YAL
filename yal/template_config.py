@@ -124,10 +124,23 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
             ))
         targets.append(TargetDef(file=td["file"], format=td.get("format", "yaml"), mappings=mappings))
 
+    raw_messages = raw.get("messages", {})
     messages = {}
-    for lang, lang_data in raw.get("messages", {}).items():
-        messages[lang] = {fid: (msg if isinstance(msg, dict) else {"prompt": str(msg)})
-                          for fid, msg in lang_data.items()}
+
+    base_msgs = {}
+    for fid, msg in raw_messages.items():
+        if not isinstance(msg, dict) or any(k in msg for k in ["prompt", "placeholder"]):
+            base_msgs[fid] = (msg if isinstance(msg, dict) else {"prompt": str(msg)})
+
+    messages["_base"] = base_msgs
+
+    # 2. Извлекаем языковые секции
+    for lang, data in raw_messages.items():
+        if isinstance(data, dict) and not any(k in data for k in ["prompt", "placeholder"]):
+            messages[lang] = {
+                fid: (msg if isinstance(msg, dict) else {"prompt": str(msg)})
+                for fid, msg in data.items()
+            }
 
     return YalConfig(min_version=meta.get("yal-min-version", "0.0.0"), fields=fields, targets=targets, messages=messages)
 
@@ -160,9 +173,13 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
 
 def _get_msg(config: YalConfig, fid: str, key: str, fallback: str) -> str:
     current_lang_code = current_lang()
-    for lang_code in [current_lang_code, "en", next(iter(config.messages), "")]:
-        if (msg := config.messages.get(lang_code, {}).get(fid, {}).get(key)):
-            return msg
+
+    if (msg := config.messages.get(current_lang_code, {}).get(fid, {}).get(key)):
+        return msg
+
+    if (msg := config.messages.get("_base", {}).get(fid, {}).get(key)):
+        return msg
+
     return fallback
 
 
