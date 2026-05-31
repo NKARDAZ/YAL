@@ -8,6 +8,7 @@
   yal create book@c651f7d
   yal create book:default@1.7.1
   yal create book:mytheme
+  yal create my-kind:default
 """
 
 from __future__ import annotations
@@ -19,23 +20,24 @@ from pathlib import Path
 
 from yal import store, template_config, user_store
 from yal.i18n import t
-from yal.templates.handler_def import HANDLERS
-from yal.templates.registry import TemplateEntry, get_entry, list_kinds
+from yal.templates.handler_def import get_handler, known_kinds
+from yal.templates.registry import TemplateEntry, get_entry
 from yal.yal_toml_writer import fill_yal_toml_origin
 
 
 def run(args: argparse.Namespace) -> None:
     kind, name, ref = _parse_spec(args.what)
 
-    handler = HANDLERS.get(kind)
-    if handler is None:
-        print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(list_kinds()))}")
-        sys.exit(1)
-
+    # Сначала пробуем получить entry — он нужен для get_handler (is_user флаг)
     try:
         entry = get_entry(kind, name)
     except ValueError as e:
         print(f"[YAL] {e}")
+        sys.exit(1)
+
+    handler = get_handler(kind, entry)
+    if handler is None:
+        print(f"[YAL] {t('errors.unknown-kind', kind=kind, available=', '.join(known_kinds()))}")
         sys.exit(1)
 
     output_dir = Path(args.output).resolve()
@@ -92,6 +94,6 @@ def _parse_spec(spec: str) -> tuple[str, str, str | None]:
         sys.exit(1)
 
     kind = m.group("kind").lower()
-    name = m.group("name") or "default"   # регистр сохраняем как есть
+    name = m.group("name") or "default"
     ref = m.group("ref") or None
     return kind, name, ref

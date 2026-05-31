@@ -172,6 +172,11 @@ class GenericHandler:
             return user_store.user_get_most_recent_local(self.kind, name)
         return store.get_most_recent_local(self.kind, name)
 
+    def _installed_versions(self, entry: TemplateEntry, name: str) -> list[str]:
+        if entry.is_user:
+            return user_store.user_installed_versions(self.kind, name)
+        return store.installed_versions(self.kind, name)
+
     def _save_meta(self, entry: TemplateEntry, name: str, version: str, source: str) -> None:
         src_literal = cast(SourceType, source)
         if entry.is_user:

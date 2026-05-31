@@ -14,11 +14,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from yal import github
+from yal import github, user_store
 from yal.i18n import t, yes_variants
 from yal.templates.registry import TemplateEntry
 from yal.templates import user_registry
-from yal import user_store
 
 
 def run(args: argparse.Namespace) -> None:
@@ -60,6 +59,15 @@ def run(args: argparse.Namespace) -> None:
 
 
 # ─── скачивание ───────────────────────────────────────────────────────────────
+
+
+def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
+    try:
+        return github.get_releases(repo)
+    except Exception as e:
+        print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
+        return []
+
 
 def _download(entry: TemplateEntry, kind: str, name: str) -> str:
     releases = _fetch_releases_safe(entry.repo)
@@ -186,14 +194,6 @@ def _confirm_download(
         print()
         return False
     return answer in yes_variants()
-
-
-def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
-    try:
-        return github.get_releases(repo)
-    except Exception as e:
-        print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
-        return []
 
 
 def _parse_spec(what: str, repo: str) -> tuple[str, str, str]:
