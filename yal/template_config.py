@@ -79,8 +79,9 @@ class FieldDef:
 @dataclass
 class TargetFieldMapping:
     key: str
-    field: str | None = None   # ссылка на поле из [[fields]] (приоритет)
-    value: str | None = None   # литерал или ${GENERATOR} (запасной вариант)
+    field: str | None = None
+    value: str | None = None
+    fallback: str | None = None
 
 
 @dataclass
@@ -125,6 +126,7 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
                 key=m["key"],
                 field=m.get("field"),
                 value=m.get("value"),
+                fallback=m.get("fallback"),
             ))
         targets.append(TargetDef(file=td["file"], format=td.get("format", "yaml"), mappings=mappings))
 
@@ -226,8 +228,8 @@ def apply(config: YalConfig, values: dict[str, Any], dest_dir: Path) -> None:
             data = yaml_parser.load(protected)
 
             for m in target.mappings:
-                val = _resolve_mapping(m, values)
-                if val is not None:
+                should_set, val = _resolve_mapping(m, values)
+                if should_set:
                     _set_yaml_path(data, m.key, val)
 
             buf = io.StringIO()
@@ -238,26 +240,32 @@ def apply(config: YalConfig, values: dict[str, Any], dest_dir: Path) -> None:
             )
 
 
-def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> str | None:
+def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> tuple[bool, Any]:
     """
-    Определяет итоговое значение для маппинга по приоритету:
-      1. field — ссылка на значение из пользовательского ввода (collect).
-      2. value — литерал или выражение ${GENERATOR}.
-
-    Если ни field, ни value не дали результата — возвращает None,
-    и запись в YAML-файл пропускается.
+    Возвращает (should_set, value).
+    should_set: True — нужно записать значение (даже если оно None/null)
+    value: само значение для записи
     """
-    # Приоритет 1: field → берём из пользовательского ввода
+    raw_val = None
+    # Сначала пытаемся получить значение
     if m.field is not None:
-        user_val = values.get(m.field)
-        if user_val is not None:
-            return user_val
+        raw_val = values.get(m.field)
+    elif m.value is not None:
+        raw_val = generators.resolve(m.value, values)
 
-    # Приоритет 2: value → литерал или ${...}
-    if m.value is not None:
-        return generators.resolve(m.value)
+    # Fallback
+    if (raw_val is None or raw_val == "") and m.fallback is not None:
+        raw_val = generators.resolve(m.fallback, values)
 
-    return None
+    # Если ничего не нашли — пропускаем запись
+    if raw_val is None or raw_val == "":
+        return False, None
+
+    # Если нашли наш маркер — это значит "установить значение в None"
+    if raw_val == "__YAL_NULL__":
+        return True, None
+
+    return True, raw_val
 
 
 def _set_yaml_path(data: dict, key_path: str, value: str) -> None:

@@ -40,11 +40,11 @@ import random
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Union
 
 # ─── реестр генераторов ───────────────────────────────────────────────────────
 
-_REGISTRY: dict[str, Callable[[], str]] = {}
+_REGISTRY: dict[str, Callable[[], Union[str, int]]] = {}
 
 # ${NAME} — генераторы (имя в верхнем регистре, заглушаем $)
 _EXPR_RE = re.compile(r'^\$\{([^}]+)\}$')
@@ -54,9 +54,9 @@ _GEN_PART_RE = re.compile(r'\$\{([^}]+)\}')
 _INTERP_PART_RE = re.compile(r'\{([^}]+)\}')
 
 
-def register(name: str) -> Callable[[Callable[[], str]], Callable[[], str]]:
+def register(name: str) -> Callable[[Callable[[], Union[str, int]]], Callable[[], Union[str, int]]]:
     """Декоратор для регистрации генератора под именем name."""
-    def decorator(fn: Callable[[], str]) -> Callable[[], str]:
+    def decorator(fn: Callable[[], Union[str, int]]) -> Callable[[], Union[str, int]]:
         _REGISTRY[name.upper()] = fn
         return fn
     return decorator
@@ -68,6 +68,24 @@ def register(name: str) -> Callable[[Callable[[], str]], Callable[[], str]]:
 def _gen_uuid() -> str:
     """Генерирует UUID4 в стандартном формате: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx."""
     return str(uuid.uuid4())
+
+
+@register("YEAR")
+def _gen_year() -> int:
+    """Текущий год (UTC)."""
+    return datetime.now(timezone.utc).year
+
+
+@register("MONTH")
+def _gen_month() -> int:
+    """Текущий месяц (UTC)."""
+    return datetime.now(timezone.utc).month
+
+
+@register("DAY")
+def _gen_day() -> int:
+    """Текущий день (UTC)."""
+    return datetime.now(timezone.utc).day
 
 
 @register("DATE")
@@ -88,6 +106,11 @@ def _gen_random() -> str:
     return str(random.randint(0, 2**31 - 1))
 
 
+@register("NULL")
+def _gen_null() -> str:
+    return "__YAL_NULL__"
+
+
 # ─── публичный API ────────────────────────────────────────────────────────────
 
 def is_expression(value: str) -> bool:
@@ -100,76 +123,40 @@ def has_interpolation(value: str) -> bool:
     return bool(_INTERP_PART_RE.search(value))
 
 
-def resolve(value: str, fields: dict[str, str] | None = None) -> str | None:
-    """
-    Вычисляет value и возвращает итоговую строку (или None если результат пустой).
-
-    Порядок обработки:
-      1. Если value — чистое ${NAME}: вызывает генератор.
-         Неизвестное имя → возвращает исходную строку (не ломаем шаблон).
-      2. Если value содержит {field-name} или ${NAME} как часть строки:
-         - сначала подставляются генераторы ${NAME},
-         - затем поля {field-name} из fields.
-         Отсутствующее или пустое поле → заменяется на "".
-         Если после всех подстановок остался только статичный текст без
-         каких-либо значимых вставок (все поля были пустыми/отсутствующими
-         и генераторов не было) — возвращает None.
-      3. Иначе: возвращает value как есть.
-
-    Примеры:
-        resolve("${UUID}")                                    → "550e8400-…"
-        resolve("${DATE}")                                    → "2026-01-15"
-        resolve("© {book-author}", {"book-author": "Иван"})  → "© Иван"
-        resolve("© {book-author}", {"book-author": ""})      → None
-        resolve("{a} и {b}", {"a": "X", "b": ""})            → "X и "
-        resolve("{book-title}, ${DATE}", {...})               → "Моя книга, 2026-01-15"
-        resolve("plain string")                               → "plain string"
-    """
+def resolve(value: str, fields: dict[str, str] | None = None) -> str | int | None:
     # ── 1. Чистый генератор ${NAME} ───────────────────────────────────────────
     m = _EXPR_RE.match(value)
     if m:
         name = m.group(1).upper()
         fn = _REGISTRY.get(name)
         if fn is None:
-            return value  # неизвестный — возвращаем как есть
-        return fn()
+            return value
+        return fn()  # Возвращаем результат как есть (int или str)
 
-    # ── 2. Смешанная строка с ${...} и/или {field-name} ──────────────────────
+    # ── 2. Смешанная строка ────────────────────────────────────────────────────
+    # Если в строке есть хоть что-то еще, кроме генератора,
+    # результат ВСЕГДА будет строкой (так как мы конкатенируем текст)
+
     has_gen = _GEN_PART_RE.search(value)
     has_field = _INTERP_PART_RE.search(value)
 
     if has_gen or has_field:
         resolved_fields = fields or {}
-        any_substituted = False  # хоть одна вставка дала непустой результат
 
-        # Сначала раскрываем генераторы ${NAME}, чтобы $ не мешал {}-парсингу
-        def _sub_gen(match: re.Match) -> str:
-            nonlocal any_substituted
+        # Заменяем генераторы
+        def _sub_gen_to_str(match: re.Match) -> str:
             name = match.group(1).upper()
             fn = _REGISTRY.get(name)
-            if fn is None:
-                # Неизвестный генератор — оставляем как есть, но считаем вставкой:
-                # автор явно написал ${...}, значит строка намеренная.
-                any_substituted = True
-                return match.group(0)
-            result = fn()
-            any_substituted = True
-            return result
+            # Если генератор не найден, оставляем ${NAME} как текст
+            return str(fn()) if fn else match.group(0)
 
-        step1 = _GEN_PART_RE.sub(_sub_gen, value)
+        step1 = _GEN_PART_RE.sub(_sub_gen_to_str, value)
 
-        # Затем раскрываем поля {field-name}
-        def _sub_field(match: re.Match) -> str:
-            nonlocal any_substituted
-            field_val = resolved_fields.get(match.group(1), "")
-            if field_val:
-                any_substituted = True
-            return field_val
+        # Заменяем поля
+        result = _INTERP_PART_RE.sub(lambda m: resolved_fields.get(m.group(1), ""), step1)
 
-        result = _INTERP_PART_RE.sub(_sub_field, step1)
-
-        # Если ни одна вставка не дала значения — смысла писать нет
-        return result if any_substituted else None
+        # Если после всех замен строка пуста, возвращаем None
+        return result if result else None
 
     # ── 3. Простой литерал ────────────────────────────────────────────────────
     return value
