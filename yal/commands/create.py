@@ -28,7 +28,6 @@ from yal.yal_toml_writer import fill_yal_toml_origin
 def run(args: argparse.Namespace) -> None:
     kind, name, ref = _parse_spec(args.what)
 
-    # Сначала пробуем получить entry — он нужен для get_handler (is_user флаг)
     try:
         entry = get_entry(kind, name)
     except ValueError as e:
@@ -42,27 +41,31 @@ def run(args: argparse.Namespace) -> None:
 
     output_dir = Path(args.output).resolve()
 
-    # 1. Получаем версию и загружаем конфигурацию до создания папок
+    # 1. Определяем версию один раз (может потребовать загрузки и подтверждения)
     version = handler._resolve_version(entry, name, ref)
+
+    # 2. Загружаем конфигурацию шаблона
     src_dir = _src_dir(entry, kind, name, version)
     config = template_config.load(src_dir)
 
     values = {}
     folder_name = None
 
-    # 2. Собираем значения и определяем имя папки
+    # 3. Собираем значения полей и имя папки (диалог с пользователем)
     if config is not None:
         values = template_config.collect(config)
         folder_name = template_config.get_folder_name(config, values)
 
     try:
-        # 3. Создаём структуру проекта
+        # 4. Копируем шаблон в dest, передавая уже определённую версию
+        #    чтобы handler.create не вызывал _resolve_version повторно
         result = handler.create(
             entry=entry,
             name=name,
             output_dir=output_dir,
             ref=ref,
             custom_folder_name=folder_name,
+            resolved_version=version,
         )
 
         if config is not None:

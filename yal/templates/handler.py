@@ -8,11 +8,10 @@ import shutil
 from pathlib import Path
 from typing import Literal, cast
 
-from yal import github, store, user_store
+from yal import git_provider, store, user_store
 from yal.i18n import t, yes_variants
 from yal.templates.registry import TemplateEntry
 
-# Определяем допустимые типы источников для строгой типизации
 SourceType = Literal["release", "commit"]
 
 
@@ -33,8 +32,11 @@ class GenericHandler:
         output_dir: Path,
         ref: str | None,
         custom_folder_name: str | None = None,
+        resolved_version: str | None = None,
     ) -> CreateResult:
-        version = self._resolve_version(entry, name, ref)
+        # Если версия уже определена снаружи (из create.py) — используем её,
+        # иначе определяем здесь (обратная совместимость).
+        version = resolved_version if resolved_version is not None else self._resolve_version(entry, name, ref)
         src = self._template_dir(entry, name, version)
 
         label = self.kind if name.lower() == "default" else name
@@ -96,7 +98,7 @@ class GenericHandler:
         entry: TemplateEntry,
         name: str,
         ref: str | None,
-        releases: list[github.ReleaseInfo],
+        releases: list[git_provider.ReleaseInfo],
     ) -> str:
         if ref is None or ref == "latest":
             target = releases[0]
@@ -120,7 +122,7 @@ class GenericHandler:
 
         dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
-        github.download_release(target, dest)
+        git_provider.download_release(target, dest)
         self._save_meta(entry, name, version, "release", target.released_at)
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
@@ -135,9 +137,9 @@ class GenericHandler:
 
         try:
             if ref is None or ref == "latest":
-                info = github.get_latest_commit(entry.repo)
+                info = git_provider.get_latest_commit(entry.repo)
             else:
-                info = github.get_commit(entry.repo, ref)
+                info = git_provider.get_commit(entry.repo, ref)
         except Exception as e:
             raise RuntimeError(t("errors.commit-info-fail", error=e)) from e
 
@@ -153,12 +155,11 @@ class GenericHandler:
         dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.commit-cloning', version=version)}")
         try:
-            github.clone_repo(entry.repo, dest, ref=info.sha)
+            git_provider.clone_repo(entry.repo, dest, ref=info.sha)
         except Exception:
             if dest.exists():
                 import shutil as _shutil
-                from yal.github import _force_remove_readonly
-                _shutil.rmtree(dest, onexc=_force_remove_readonly)
+                _shutil.rmtree(dest, onexc=git_provider._force_remove_readonly)
             raise
         self._save_meta(entry, name, version, "commit", info.released_at)
         print(f"[YAL] {t('download.done', path=dest)}")
@@ -220,9 +221,9 @@ class GenericHandler:
 
 # ── Утилиты ──────────────────────────────────────────────────────────────────
 
-def _fetch_releases_safe(repo: str) -> list[github.ReleaseInfo]:
+def _fetch_releases_safe(repo: str) -> list[git_provider.ReleaseInfo]:
     try:
-        return github.get_releases(repo)
+        return git_provider.get_releases(repo)
     except Exception as e:
         print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
         return []
