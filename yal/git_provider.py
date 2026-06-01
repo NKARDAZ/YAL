@@ -313,6 +313,12 @@ def expand_repo_shortcut(spec: str) -> str:
     """
     s = spec.strip()
 
+    # Локальный путь на Windows или Unix
+    if os.path.isabs(s) or s.startswith(("./", "../")):
+        return s
+    if os.path.exists(s):
+        return s
+
     # Уже полный URL
     if re.match(r"^(https?|git|ssh)://", s):
         return s
@@ -369,12 +375,14 @@ def expand_repo_shortcut(spec: str) -> str:
 
 def validate_repo_url(url: str) -> None:
     """Бросает ValueError если url не похож на git-адрес."""
+    if os.path.exists(url):
+        return
     if re.match(r"^(https?|git|ssh)://", url):
         return
     if re.match(r"^git@[^:]+:.+", url):
         return  # SCP-нотация: git@github.com:user/repo.git
     raise ValueError(f"Неподдерживаемый формат репозитория: {url!r}\n"
-                     "  Ожидается https://, git://, ssh:// или git@host:path")
+                     "  Ожидается https://, git://, ssh://, git@host:path или путь к локальному репозиторию")
 
 
 # ─── публичный API (совместимый с прежним github.py) ─────────────────────────
@@ -503,8 +511,20 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
     sha = ""
     if result.returncode == 0 and result.stdout.strip():
         sha = result.stdout.strip().split("\n")[0].split()[0]
+
+    if not sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", "--tags", repo],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().splitlines():
+                candidate = line.split()[0]
+                if candidate.lower().startswith(ref.lower()):
+                    sha = candidate
+                    break
+
     if not sha:
-        # Если ls-remote не вернул (полный sha, локальная ссылка) — клонируем
         raise RuntimeError(
             f"Не удалось найти ref {ref!r} в {repo!r}. "
             "Для коммитов по короткому sha требуется полный ref."

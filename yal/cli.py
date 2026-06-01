@@ -56,20 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ── add ──────────────────────────────────────────────────────────────────
-    p_add = sub.add_parser("add", help="Register an external template from GitHub")
+    p_add = sub.add_parser("add", help="Register an external template from a git repository")
     p_add.add_argument(
         "what",
-        help="Template to register. Format: <kind>:<name>",
+        help="Template to register. Format: <kind>:<name>[@<ref>], e.g. gitlab:test@c651f7db",
     )
     p_add.add_argument(
         "from_kw",
+        nargs="?",
         metavar="from",
-        help="Keyword 'from'",
+        help="Optional keyword 'from'",
     )
     p_add.add_argument(
         "repo",
+        nargs="?",
         metavar="URL",
-        help="GitHub repository URL",
+        help="Git repository URL",
     )
 
     # ── remove ────────────────────────────────────────────────────────────────

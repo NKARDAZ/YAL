@@ -108,8 +108,7 @@ class GenericHandler:
                 None,
             )
             if target is None:
-                available = ", ".join(r.tag for r in releases)
-                raise ValueError(t("errors.release-missing", ref=ref, available=available))
+                return self._download_commit(entry, name, ref)
 
         version = target.tag.lstrip("vV")
 

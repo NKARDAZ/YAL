@@ -52,7 +52,25 @@ def load_registry() -> dict[str, dict[str, TemplateEntry]]:
         raw: dict[str, Any] = tomllib.load(f)
 
     result: dict[str, dict[str, TemplateEntry]] = {}
-    for kind, names in raw.items():
+    for raw_key, raw_val in raw.items():
+        if not isinstance(raw_val, dict):
+            continue
+
+        if "::" in raw_key:
+            kind, _, name = raw_key.partition("::")
+            if kind not in result:
+                result[kind] = {}
+            meta = raw_val
+            repo = meta.get("repo", "")
+            if not repo:
+                continue
+            raw_exclude: list[str] = meta.get("exclude", [])
+            exclude = _merge_exclude(raw_exclude)
+            result[kind][name] = TemplateEntry(repo=repo, exclude=exclude, is_user=True)
+            continue
+
+        kind = raw_key
+        names = raw_val
         if not isinstance(names, dict):
             continue
         result[kind] = {}
@@ -95,7 +113,14 @@ def add_entry(kind: str, name: str, repo: str, exclude: list[str]) -> None:
     # Убираем глобальные исключения из того, что запишем явно
     clean_exclude = [e for e in exclude if e not in _GLOBAL_EXCLUDE]
 
-    raw.setdefault(kind, {})[name] = {
+    flat_key = f"{kind}::{name}"
+    raw.pop(flat_key, None)
+    kind_data = raw.get(kind)
+    if isinstance(kind_data, dict):
+        kind_data.pop(name, None)
+        if not kind_data:
+            raw.pop(kind, None)
+    raw[flat_key] = {
         "repo": repo,
         "exclude": clean_exclude,
     }
@@ -111,17 +136,29 @@ def remove_entry(kind: str, name: str) -> None:
     with open(USER_REGISTRY_PATH, "rb") as f:
         raw: dict[str, Any] = tomllib.load(f)
 
-    kind_data = raw.get(kind, {})
     name_lower = name.lower()
-    key_to_remove = next((k for k in kind_data if k.lower() == name_lower), None)
+    kind_data = raw.get(kind, {})
+    key_to_remove = None
+
+    if isinstance(kind_data, dict):
+        key_to_remove = next((k for k in kind_data if k.lower() == name_lower), None)
+        if key_to_remove is not None:
+            del kind_data[key_to_remove]
+            if not kind_data:
+                del raw[kind]
+            USER_REGISTRY_PATH.write_text(_serialize(raw), encoding="utf-8")
+            return
+
+    # Fallback for flat keys like "kind::name"
+    key_to_remove = next(
+        (k for k in raw if k.lower().startswith(f"{kind.lower()}::") and k.split("::", 1)[1].lower() == name_lower),
+        None,
+    )
 
     if key_to_remove is None:
         return
 
-    del kind_data[key_to_remove]
-    if not kind_data:
-        del raw[kind]
-
+    del raw[key_to_remove]
     USER_REGISTRY_PATH.write_text(_serialize(raw), encoding="utf-8")
 
 
@@ -151,9 +188,20 @@ def _serialize(data: dict[str, Any]) -> str:
         names = data[kind]
         if not isinstance(names, dict):
             continue
+        if "::" in kind:
+            meta = names
+            if not isinstance(meta, dict):
+                continue
+            lines.append(f"[{_toml_str(kind)}]")
+            lines.append(f'repo    = {_toml_str(meta.get("repo", ""))}')
+            excl = meta.get("exclude", [])
+            lines.append(f"exclude = {_toml_list(excl)}")
+            lines.append("")
+            continue
         for name in sorted(names):
             meta = names[name]
-            lines.append(f"[{kind}.{name}]")
+            header = _toml_str(f"{kind}::{name}")
+            lines.append(f"[{header}]")
             lines.append(f'repo    = {_toml_str(meta.get("repo", ""))}')
             excl = meta.get("exclude", [])
             lines.append(f"exclude = {_toml_list(excl)}")

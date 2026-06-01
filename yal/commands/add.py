@@ -48,12 +48,15 @@ from yal.templates import user_registry
 
 
 def run(args: argparse.Namespace) -> None:
-    kind, name, ref, repo = _parse_spec(args.what, args.repo)
+    kind, name, ref, repo = _parse_spec(args.what, args.from_kw, args.repo)
 
     # Проверяем, не зарегистрирован ли уже
     existing = user_registry.get_entry(kind, name)
     if existing is not None and existing.repo == repo:
-        print(f"[YAL] {t('add.already-registered', kind=kind, name=name)}")
+        if ref is None:
+            print(f"[YAL] {t('add.already-registered', kind=kind, name=name)}")
+            sys.exit(0)
+        exclude = existing.exclude
     elif existing is not None:
         print(f"[YAL] {t('add.name-conflict', kind=kind, name=name, old_repo=existing.repo)}")
         print(t("common.confirm-prompt"), end="", flush=True)
@@ -65,6 +68,9 @@ def run(args: argparse.Namespace) -> None:
         if answer not in yes_variants():
             print(f"[YAL] {t('errors.cancelled', action=t('add.action'))}")
             sys.exit(0)
+        exclude = None
+    else:
+        exclude = None
 
     entry = TemplateEntry(repo=repo, exclude=[])
 
@@ -74,10 +80,9 @@ def run(args: argparse.Namespace) -> None:
         print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
 
-    # Предлагаем добавить исключения
-    exclude = _ask_excludes()
+    if exclude is None:
+        exclude = _ask_excludes()
 
-    # Сохраняем в реестр
     user_registry.add_entry(kind, name, repo, exclude)
 
     dest = user_store.user_template_dir(kind, name, version)
@@ -105,15 +110,14 @@ def _download(entry: TemplateEntry, kind: str, name: str, ref: str | None) -> st
 def _download_release(
     entry: TemplateEntry, kind: str, name: str, ref: str | None, releases: list[ReleaseInfo]
 ) -> str:
-    target = (
-        releases[0]
-        if (ref is None or ref == "latest")
-        else next((r for r in releases if r.tag in (ref, f"v{ref}")), None)
-    )
-    if not target:
-        raise ValueError(f"Релиз {ref} не найден")
-
-    version = target.tag.lstrip("vV")
+    if ref is None or ref == "latest":
+        target = releases[0]
+        version = target.tag.lstrip("vV")
+    else:
+        target = next((r for r in releases if r.tag in (ref, f"v{ref}")), None)
+        if target is None:
+            return _download_commit(entry, kind, name, ref)
+        version = target.tag.lstrip("vV")
 
     if user_store.user_is_installed(kind, name, version):
         print(f"[YAL] {t('create.using-local', version=version)}")
@@ -209,13 +213,14 @@ def _confirm_download(kind, name, version, source_type, repo) -> bool:
     return answer in yes_variants()
 
 
-def _parse_spec(what: str, repo_spec: str) -> tuple[str, str, str | None, str]:
+def _parse_spec(what: str, from_kw: str | None, repo_spec: str | None) -> tuple[str, str, str | None, str]:
     """
-    Разбирает <kind>:<name>[@<ref>] и <repo-spec>.
+    Разбирает <kind>:<name>[@<ref>] и необязательный <repo-spec>.
 
     repo-spec может быть:
       — Полным URL (https://, git://, ssh://)
       — Сокращением (user/repo, gitlab:user/repo, ...)
+      — Путь к локальному git-репозиторию
     """
     # Парсим what
     pattern = r"^(?P<kind>[^:@]+):(?P<name>[^@]+)(?:@(?P<ref>.+))?$"
@@ -228,7 +233,21 @@ def _parse_spec(what: str, repo_spec: str) -> tuple[str, str, str | None, str]:
     name = m.group("name")
     ref = m.group("ref") or None
 
-    # Нормализуем repo-spec → полный URL
+    if from_kw is None and repo_spec is None:
+        existing = user_registry.get_entry(kind, name)
+        if existing is None:
+            print(f"[YAL] {t('add.repo-required', kind=kind, name=name)}")
+            sys.exit(1)
+        return kind, name, ref, existing.repo
+
+    if from_kw is None or repo_spec is None:
+        print(f"[YAL] {t('add.invalid-from')}")
+        sys.exit(1)
+
+    if from_kw.lower() != "from":
+        print(f"[YAL] {t('add.invalid-from-keyword', keyword=from_kw)}")
+        sys.exit(1)
+
     try:
         repo = expand_repo_shortcut(repo_spec.strip())
         validate_repo_url(repo)

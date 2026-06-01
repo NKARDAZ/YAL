@@ -1,6 +1,6 @@
 # [YAL](https://pypi.org/project/yal-cmd/)
 
-**YAL** is a command-line utility for project initialization and updates based on templates.
+**YAL** is a command-line utility for project initialization and updates based on templates from git repositories.
 
 ## Commands
 
@@ -52,9 +52,13 @@ Registers a GitHub repository as a named template under a given kind, then downl
 ```bash
 # Register and download the latest release (or commit)
 yal add book:my-theme from https://github.com/user/my-book-template
+# shortcut for GitHub
+yal add book:my-theme from user/my-book-template
+# or
+yal add book:my-theme <other git service/local repo>
 
 # Register a specific version
-yal add book:my-theme@1.2.0 from https://github.com/user/my-book-template
+yal add book:my-theme@1.2.0 from user/my-book-template
 ```
 
 After registration the template is available like any built-in one:
@@ -65,6 +69,32 @@ yal update book:my-theme
 ```
 
 Registered templates are stored in `~/.yal/user-templates.toml`. Downloaded files go to `~/.yal/user-templates/<kind>/<name>/<version>/`.
+
+
+## Git
+
+You can use any Git hosting service or a local repository. Built-in shortcuts are available for a number of services:
+
+```bash
+user/repo # Github
+gitlab:user/repo
+codeberg:user/repo
+bitbucket:user/repo
+git.gay:user/repo
+gitverse:user/repo
+sourceforge:project/repo
+sourceforge:user@project/repo
+```
+
+```bash
+yal add my-sf:default from sourceforge:my-project/code
+```
+
+Local repository:
+
+```bash
+yal add my-local-repos:default from /path/to/local/repo
+```
 
 ---
 
@@ -263,7 +293,7 @@ pip install pyyaml pikepdf pillow
 
 ## Custom templates
 
-Any public GitHub repository can be registered as a template. The repository does not need to contain a `yal.template.toml` — YAL will copy it as-is and create a default `yal.toml` in the resulting project.
+Any public repository can be registered as a template. The repository does not need to contain a `yal.template.toml` — YAL will copy it as-is and create a default `yal.toml` in the resulting project.
 
 ```bash
 # Register under a new kind "vue", name "default"
