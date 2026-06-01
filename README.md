@@ -4,7 +4,7 @@
 
 ## Commands
 
-- `yal create <kind>[:<name>][@<ref>]` — uses a template to create a new project; if name is not specified, the `default` template will be used
+- `yal new <kind>[:<name>][@<ref>]` — uses a template to create a new project; if name is not specified, the `default` template will be used
 - `yal update <kind>[:<name>]` — downloads and caches the latest version of a template
 - `yal add <kind>:<name>[@<ref>] from <repository URL | user/repo>` — registers an external template from GitHub with the specified name
 - `yal remove <kind>[:<name>[@<version>]]` — removes a template from the local storage; if name is not specified, all templates of the given kind will be removed
@@ -17,17 +17,17 @@ Downloads the template (if not cached locally) and initiates the configuration p
 
 ```bash
 # Basic usage — uses the "default" template, latest version
-yal create book
+yal new book
 
 # Specify a template by name
-yal create book:my-theme
+yal new book:my-theme
 
 # Specify a version (release tag or commit hash)
-yal create book@1.7.1
-yal create book@c651f7d
+yal new book@1.7.1
+yal new book@c651f7d
 
 # Combined
-yal create book:my-theme@1.7.1
+yal new book:my-theme@1.7.1
 ```
 
 If the requested version is already cached locally, YAL skips the download. If no version is specified, YAL uses the most recent locally cached version; if none is cached, it downloads the latest release (or the latest commit if the repository has no releases).
@@ -64,7 +64,7 @@ yal add book:my-theme@1.2.0 from user/my-book-template
 After registration the template is available like any built-in one:
 
 ```bash
-yal create book:my-theme
+yal new book:my-theme
 yal update book:my-theme
 ```
 
@@ -279,7 +279,7 @@ project-name.prompt = "Название проекта"
 
 - **Repo:** https://github.com/DemerNkardaz/Typst-Book-Template
 - **Name:** `default`
-- **Use:** `yal create book`
+- **Use:** `yal new book`
 
 A template for creating a book using [Typst](https://typst.app/), including a prebuilt structure, plugins, styles, settings, and a build system combining Typst and Python tools.
 
@@ -300,7 +300,7 @@ Any public repository can be registered as a template. The repository does not n
 yal add vue:default from <user>/my-vue-template
 
 # Create a project from it
-yal create vue
+yal new vue
 ```
 
 You can register multiple named templates under the same kind:
@@ -309,8 +309,8 @@ You can register multiple named templates under the same kind:
 yal add vue:tailwind from <user>/vue-tailwind-template
 yal add vue:minimal  from <user>/vue-minimal-template
 
-yal create vue:tailwind
-yal create vue:minimal
+yal new vue:tailwind
+yal new vue:minimal
 ```
 
 ### Full example with yal.template.toml
@@ -378,10 +378,27 @@ author.placeholder       = "Your Name"
 
 ## Authentication
 
-For private repositories or to avoid GitHub API rate limits, set a personal access token:
+For private repositories or to avoid API rate limits, set a personal access token for the corresponding provider:
 
 ```bash
+# GitHub
 export GITHUB_TOKEN=ghp_...
 # or
 export GH_TOKEN=ghp_...
 ```
+<!--
+# GitLab
+export GITLAB_TOKEN=glpat-...
+# or
+export GL_TOKEN=glpat-...
+
+# Codeberg (Forgejo/Gitea)
+export CODEBERG_TOKEN=...
+
+# Bitbucket
+export BITBUCKET_TOKEN=...
+
+# SourceForge
+export SOURCEFORGE_TOKEN=...
+```
+-->

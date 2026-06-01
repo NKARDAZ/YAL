@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from yal.commands import create as cmd_create
+from yal.commands import new as cmd_create
 from yal.commands import update as cmd_update
 from yal.commands import run as cmd_run
 from yal.commands import add as cmd_add
@@ -29,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    # ── create ───────────────────────────────────────────────────────────────
-    p_create = sub.add_parser("create", help="Create project from template")
+    # ── new ───────────────────────────────────────────────────────────────
+    p_create = sub.add_parser("new", help="Create project from template")
     p_create.add_argument(
         "what",
         help=(
@@ -101,7 +101,7 @@ def main() -> None:
         # Встроенные команды
         if command in BUILTIN_COMMANDS:
             args = parser.parse_args(args_list)
-            if args.command == "create":
+            if args.command == "new":
                 cmd_create.run(args)
             elif args.command == "update":
                 cmd_update.run(args)
