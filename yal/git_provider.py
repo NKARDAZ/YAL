@@ -383,6 +383,11 @@ def expand_repo_shortcut(spec: str) -> str:
             project = m2.group("project")
             repo_name = m2.group("repo")
             return f"git://git.code.sf.net/p/{project}/{repo_name}"
+        # Если указан только проект — подставляем дефолтный репозиторий 'code'
+        m3 = re.match(r"^(?P<project>[^/]+)$", rest)
+        if m3:
+            project = m3.group("project")
+            return f"git://git.code.sf.net/p/{project}/code"
         raise ValueError(f"Не удалось разобрать SourceForge-сокращение: {spec!r}\n"
                          "  Формат: sourceforge:project/repo  или  sourceforge:user@project/repo")
 
@@ -528,7 +533,7 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
     if result.returncode == 0 and result.stdout.strip():
         sha = _pick_ref_sha_from_ls_remote(result.stdout.strip().splitlines(), ref)
 
-    if not sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+    if not sha and re.fullmatch(r"[0-9a-fA-F]{6,40}", ref):
         result = subprocess.run(
             ["git", "ls-remote", "--heads", "--tags", repo],
             capture_output=True, text=True
@@ -540,7 +545,7 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
                     sha = candidate
                     break
 
-    if not sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+    if not sha and re.fullmatch(r"[0-9a-fA-F]{6,40}", ref):
         sha = ref
 
     if not sha:
@@ -598,7 +603,7 @@ def _git_list_tags(repo: str) -> list[tuple[str, str]]:
 
     result_tags: list[tuple[str, str]] = []
     for tag_name, data in tags.items():
-        result_tags.append((tag_name, data.get("peeled") or data.get("tag")))
+        result_tags.append((tag_name, data.get("peeled") or data.get("tag") or ""))
     return result_tags
 
 
