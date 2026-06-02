@@ -266,6 +266,21 @@ class _GenericGitProvider(_Provider):
         return _git_get_commit(repo, ref)
 
 
+class _LsRemoteProvider(_GenericGitProvider):
+    """Провайдер для git-хостов без release API: теги читаем через git ls-remote."""
+    name = "git-ls-remote"
+
+    def supports_releases(self) -> bool:
+        return True
+
+    def get_releases(self, repo: str) -> list[ReleaseInfo]:
+        tags = _git_list_tags(repo)
+        return [ReleaseInfo(tag=tag, zipball_url=repo, released_at="") for tag, _sha in tags]
+
+    def download_release(self, release: ReleaseInfo, dest: Path) -> None:
+        _git_clone(release.zipball_url, dest, release.tag)
+
+
 # ─── определение провайдера по URL ───────────────────────────────────────────
 
 _KNOWN_PROVIDERS: list[tuple[str, _Provider]] = [
@@ -273,9 +288,10 @@ _KNOWN_PROVIDERS: list[tuple[str, _Provider]] = [
     ("gitlab.com", _GitLabProvider("https://gitlab.com")),
     ("codeberg.org", _ForgejoProvider("https://codeberg.org")),
     ("git.gay", _ForgejoProvider("https://git.gay")),
+    # Gitverse поддерживает теги и релизы через git ls-remote.
+    ("gitverse.ru", _LsRemoteProvider()),
     # Остальные — только clone
     ("bitbucket.org", _GenericGitProvider()),
-    ("gitverse.ru", _GenericGitProvider()),
     ("git.code.sf.net", _GenericGitProvider()),  # SourceForge
 ]
 
@@ -510,7 +526,7 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
     )
     sha = ""
     if result.returncode == 0 and result.stdout.strip():
-        sha = result.stdout.strip().split("\n")[0].split()[0]
+        sha = _pick_ref_sha_from_ls_remote(result.stdout.strip().splitlines(), ref)
 
     if not sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
         result = subprocess.run(
@@ -524,14 +540,66 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
                     sha = candidate
                     break
 
+    if not sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+        sha = ref
+
     if not sha:
         raise RuntimeError(
             f"Не удалось найти ref {ref!r} в {repo!r}. "
-            "Для коммитов по короткому sha требуется полный ref."
+            "Ожидается ветка, тег или SHA-256/160 хеш."  # noqa: E501
         )
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     return CommitInfo(sha=sha, sha7=sha[:7], released_at=now)
+
+
+def _pick_ref_sha_from_ls_remote(lines: list[str], ref: str) -> str:
+    exact_head = ""
+    exact_tag = ""
+    direct_sha = ""
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        sha, refname = parts[0], parts[1]
+        if refname == f"refs/tags/{ref}^{{}}":
+            return sha
+        if refname == f"refs/heads/{ref}":
+            exact_head = exact_head or sha
+        if refname == f"refs/tags/{ref}":
+            exact_tag = exact_tag or sha
+        if refname == ref:
+            direct_sha = direct_sha or sha
+    return direct_sha or exact_head or exact_tag or ""
+
+
+def _git_list_tags(repo: str) -> list[tuple[str, str]]:
+    result = subprocess.run(
+        ["git", "ls-remote", "--tags", repo],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    tags: dict[str, dict[str, str]] = {}
+    for line in result.stdout.strip().splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        sha, refname = parts[0], parts[1]
+        if not refname.startswith("refs/tags/"):
+            continue
+        tag_name = refname[len("refs/tags/"):]
+        if tag_name.endswith("^{}"):
+            base_tag = tag_name[:-3]
+            tags.setdefault(base_tag, {})["peeled"] = sha
+        else:
+            tags.setdefault(tag_name, {})["tag"] = sha
+
+    result_tags: list[tuple[str, str]] = []
+    for tag_name, data in tags.items():
+        result_tags.append((tag_name, data.get("peeled") or data.get("tag")))
+    return result_tags
 
 
 def _force_remove_readonly(func, path, _exc) -> None:
