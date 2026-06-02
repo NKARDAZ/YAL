@@ -2,6 +2,8 @@
 
 **YAL** is a command-line utility for project initialization and updates based on templates from git repositories.
 
+It also supports project-local commands (similar to Makefile targets or scripts in package.json). Define them in `yal.toml` and invoke them with `yal <command>`.
+
 ## Commands
 
 - `yal new <kind>[:<name>][@<ref>]` — uses a template to create a new project; if name is not specified, the `default` template will be used
@@ -378,27 +380,35 @@ author.placeholder       = "Your Name"
 
 ## Authentication
 
-For private repositories or to avoid API rate limits, set a personal access token for the corresponding provider:
+YAL supports using personal access tokens to access private repositories and to reduce API rate limits.
+
+- For provider HTTP APIs, YAL recognizes these environment variables:
+  - `GITHUB_TOKEN` or `GH_TOKEN` — GitHub API
+  - `GITLAB_TOKEN` or `GL_TOKEN` — GitLab API
+  - `CODEBERG_TOKEN` or `FORGEJO_TOKEN` — Codeberg / Forgejo API
+
+- For Git operations (`git ls-remote`, `git clone`) YAL will, when a token is available for the host, inject it into HTTPS URLs as a practical fallback. Supported variables for HTTPS auth include:
+  - `BITBUCKET_TOKEN` — Bitbucket HTTPS access
+  - `SOURCEFORGE_TOKEN` — SourceForge HTTPS access
+  - `GITVERSE_TOKEN` — gitverse.ru HTTPS access
+  - `GITGAY_TOKEN` — git.gay HTTPS access
+
+Example exports (bash):
 
 ```bash
-# GitHub
+# GitHub (API)
 export GITHUB_TOKEN=ghp_...
-# or
-export GH_TOKEN=ghp_...
-```
-<!--
-# GitLab
-export GITLAB_TOKEN=glpat-...
-# or
-export GL_TOKEN=glpat-...
 
-# Codeberg (Forgejo/Gitea)
+# GitLab (API)
+export GITLAB_TOKEN=glpat-...
+
+# Codeberg / Forgejo (API)
 export CODEBERG_TOKEN=...
 
-# Bitbucket
+# Bitbucket / SourceForge / gitverse (clone via HTTPS)
 export BITBUCKET_TOKEN=...
-
-# SourceForge
 export SOURCEFORGE_TOKEN=...
+export GITVERSE_TOKEN=...
 ```
--->
+
+Note: token injection into URLs is only performed for HTTPS remotes and only when the corresponding environment variable is set. SSH remotes (`git@...`) are left unchanged and use SSH keys.

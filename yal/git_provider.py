@@ -463,6 +463,47 @@ def _download_file(url: str, dest: Path, headers: dict[str, str] | None = None) 
                 f.write(chunk)
 
 
+# Хост → возможные переменные окружения с токенами
+_HOST_TOKEN_ENV: list[tuple[str, list[str]]] = [
+    ("github.com", ["GITHUB_TOKEN", "GH_TOKEN"]),
+    ("gitlab.com", ["GITLAB_TOKEN", "GL_TOKEN"]),
+    ("codeberg.org", ["CODEBERG_TOKEN", "FORGEJO_TOKEN"]),
+    ("git.gay", ["GITGAY_TOKEN"]),
+    ("gitverse.ru", ["GITVERSE_TOKEN"]),
+    ("bitbucket.org", ["BITBUCKET_TOKEN"]),
+    ("git.code.sf.net", ["SOURCEFORGE_TOKEN"]),
+]
+
+
+def _get_token_for_repo(repo: str) -> str | None:
+    rl = repo.lower()
+    for domain, envs in _HOST_TOKEN_ENV:
+        if domain in rl:
+            for e in envs:
+                v = os.environ.get(e)
+                if v:
+                    return v
+    return None
+
+
+def _auth_repo_url(repo: str) -> str:
+    """If a token for the repo host is present in env, inject it into https URL.
+
+    This is a pragmatic approach: for HTTPS remotes we insert `https://<token>@host/...`.
+    For SSH or git:// URLs we leave them unchanged.
+    """
+    token = _get_token_for_repo(repo)
+    if not token:
+        return repo
+    # Only modify https URLs
+    if repo.startswith("https://"):
+        # avoid double-inserting if token already present
+        if "@" in repo.split("https://", 1)[1]:
+            return repo
+        return repo.replace("https://", f"https://{token}@", 1)
+    return repo
+
+
 def _extract_flat(zip_path: Path, dest: Path) -> None:
     """Распаковать zip, убирая верхний каталог-обёртку (GitHub/GitLab/Forgejo)."""
     with zipfile.ZipFile(zip_path) as zf:
@@ -487,11 +528,12 @@ def _git_clone(repo: str, dest: Path, ref: str | None = None) -> None:
         shutil.rmtree(dest, onexc=_force_remove_readonly)
     dest.mkdir(parents=True, exist_ok=True)
 
+    auth_repo = _auth_repo_url(repo)
     if ref:
-        _run(["git", "clone", repo, str(dest)])
+        _run(["git", "clone", auth_repo, str(dest)])
         _run(["git", "-C", str(dest), "checkout", ref])
     else:
-        _run(["git", "clone", "--depth", "1", repo, str(dest)])
+        _run(["git", "clone", "--depth", "1", auth_repo, str(dest)])
 
     git_dir = dest / ".git"
     if git_dir.exists():
@@ -500,14 +542,15 @@ def _git_clone(repo: str, dest: Path, ref: str | None = None) -> None:
 
 def _git_latest_commit(repo: str, branch: str = "HEAD") -> CommitInfo:
     """Получает sha последнего коммита через git ls-remote (без полного клона)."""
+    auth_repo = _auth_repo_url(repo)
     result = subprocess.run(
-        ["git", "ls-remote", repo, branch],
+        ["git", "ls-remote", auth_repo, branch],
         capture_output=True, text=True
     )
     if result.returncode != 0 or not result.stdout.strip():
         # Fallback: пробуем HEAD
         result = subprocess.run(
-            ["git", "ls-remote", repo, "HEAD"],
+            ["git", "ls-remote", auth_repo, "HEAD"],
             capture_output=True, text=True
         )
     if result.returncode != 0:
@@ -525,8 +568,9 @@ def _git_latest_commit(repo: str, branch: str = "HEAD") -> CommitInfo:
 
 def _git_get_commit(repo: str, ref: str) -> CommitInfo:
     """Получает информацию о конкретном коммите/теге."""
+    auth_repo = _auth_repo_url(repo)
     result = subprocess.run(
-        ["git", "ls-remote", repo, ref, f"refs/tags/{ref}", f"refs/heads/{ref}"],
+        ["git", "ls-remote", auth_repo, ref, f"refs/tags/{ref}", f"refs/heads/{ref}"],
         capture_output=True, text=True
     )
     sha = ""
@@ -535,7 +579,7 @@ def _git_get_commit(repo: str, ref: str) -> CommitInfo:
 
     if not sha and re.fullmatch(r"[0-9a-fA-F]{6,40}", ref):
         result = subprocess.run(
-            ["git", "ls-remote", "--heads", "--tags", repo],
+            ["git", "ls-remote", "--heads", "--tags", auth_repo],
             capture_output=True, text=True
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -579,8 +623,9 @@ def _pick_ref_sha_from_ls_remote(lines: list[str], ref: str) -> str:
 
 
 def _git_list_tags(repo: str) -> list[tuple[str, str]]:
+    auth_repo = _auth_repo_url(repo)
     result = subprocess.run(
-        ["git", "ls-remote", "--tags", repo],
+        ["git", "ls-remote", "--tags", auth_repo],
         capture_output=True, text=True
     )
     if result.returncode != 0 or not result.stdout.strip():
