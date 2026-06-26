@@ -36,13 +36,16 @@ def run(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        _update(kind, name, entry, handler)
+        _update(kind, name, entry, handler, force_commit=getattr(args, "commit", False))
     except (ValueError, RuntimeError) as e:
         print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
 
 
-def _update(kind, name, entry, handler) -> None:
+def _update(kind, name, entry, handler, force_commit: bool = False) -> None:
+    if force_commit:
+        _update_commit(kind, name, entry, handler)
+        return
     releases = _fetch_releases_safe(entry.repo)
     if releases:
         _update_release(kind, name, entry, handler, releases)

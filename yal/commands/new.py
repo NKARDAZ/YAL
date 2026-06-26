@@ -42,7 +42,7 @@ def run(args: argparse.Namespace) -> None:
     output_dir = Path(args.output).resolve()
 
     # 1. Определяем версию один раз (может потребовать загрузки и подтверждения)
-    version = handler._resolve_version(entry, name, ref)
+    version = handler._resolve_version(entry, name, ref, force_commit=getattr(args, "commit", False))
 
     # 2. Загружаем конфигурацию шаблона
     src_dir = _src_dir(entry, kind, name, version)

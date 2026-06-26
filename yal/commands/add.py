@@ -75,7 +75,7 @@ def run(args: argparse.Namespace) -> None:
     entry = TemplateEntry(repo=repo, exclude=[])
 
     try:
-        version = _download(entry, kind, name, ref)
+        version = _download(entry, kind, name, ref, force_commit=getattr(args, "commit", False))
     except (ValueError, RuntimeError) as e:
         print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
@@ -99,7 +99,9 @@ def _fetch_releases_safe(repo: str) -> list[ReleaseInfo]:
         return []
 
 
-def _download(entry: TemplateEntry, kind: str, name: str, ref: str | None) -> str:
+def _download(entry: TemplateEntry, kind: str, name: str, ref: str | None, force_commit: bool = False) -> str:
+    if force_commit:
+        return _download_commit(entry, kind, name, ref)
     releases = _fetch_releases_safe(entry.repo)
     if releases:
         return _download_release(entry, kind, name, ref, releases)

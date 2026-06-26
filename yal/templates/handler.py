@@ -33,10 +33,11 @@ class GenericHandler:
         ref: str | None,
         custom_folder_name: str | None = None,
         resolved_version: str | None = None,
+        force_commit: bool = False,
     ) -> CreateResult:
         # Если версия уже определена снаружи (из create.py) — используем её,
         # иначе определяем здесь (обратная совместимость).
-        version = resolved_version if resolved_version is not None else self._resolve_version(entry, name, ref)
+        version = resolved_version if resolved_version is not None else self._resolve_version(entry, name, ref, force_commit)
         src = self._template_dir(entry, name, version)
 
         label = self.kind if name.lower() == "default" else name
@@ -67,26 +68,31 @@ class GenericHandler:
         entry: TemplateEntry,
         name: str,
         ref: str | None,
+        force_commit: bool = False,
     ) -> str:
         if ref:
             if self._is_installed(entry, name, ref):
                 print(f"[YAL] {t('create.using-local', version=ref)}")
                 return ref
-            return self._download(entry, name, ref)
+            return self._download(entry, name, ref, force_commit)
 
-        recent = self._get_most_recent_local(entry, name)
-        if recent:
-            print(f"[YAL] {t('create.using-local', version=recent)}")
-            return recent
+        if not force_commit:
+            recent = self._get_most_recent_local(entry, name)
+            if recent:
+                print(f"[YAL] {t('create.using-local', version=recent)}")
+                return recent
 
-        return self._download(entry, name, ref)
+        return self._download(entry, name, ref, force_commit)
 
     def _download(
         self,
         entry: TemplateEntry,
         name: str,
         ref: str | None,
+        force_commit: bool = False,
     ) -> str:
+        if force_commit:
+            return self._download_commit(entry, name, ref)
         releases = _fetch_releases_safe(entry.repo)
         if releases:
             return self._download_release(entry, name, ref, releases)

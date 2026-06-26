@@ -1,6 +1,6 @@
-.PHONY: all dev build clean
+.PHONY: db dev build clean
 
-all: dev build
+db: build dev
 
 clean:
 	python -c "import shutil; [shutil.rmtree(p, ignore_errors=True) for p in ['dist', 'build', 'yal_cmd.egg-info']]"
@@ -12,4 +12,4 @@ dev:
 	pip install -e .
 
 publish:
-	python -m twine upload dist/*
+	python -m twine upload dist/* --verbose

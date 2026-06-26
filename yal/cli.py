@@ -44,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Where to save the result (default: current directory)",
     )
+    p_create.add_argument(
+        "--commit",
+        action="store_true",
+        help="Skip release lookup and use the latest matching commit instead",
+    )
 
     # ── update ───────────────────────────────────────────────────────────────
     p_update = sub.add_parser("update", help="Update template")
@@ -53,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
             "What to update. Format: <kind>[:<name>]\n"
             "Example: book  |  book:default"
         ),
+    )
+    p_update.add_argument(
+        "--commit",
+        action="store_true",
+        help="Skip release lookup and update to the latest commit instead",
     )
 
     # ── add ──────────────────────────────────────────────────────────────────
@@ -72,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         metavar="URL",
         help="Git repository URL",
+    )
+    p_add.add_argument(
+        "--commit",
+        action="store_true",
+        help="Skip release lookup and download the latest matching commit instead",
     )
 
     # ── remove ────────────────────────────────────────────────────────────────

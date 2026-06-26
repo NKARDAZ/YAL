@@ -19,6 +19,11 @@ dependencies = [
     "tomli; python_version < '3.11'",
 ]
 
+[project.urls]
+Homepage = "https://github.com/DemerNkardaz/YAL"
+Repository = "https://github.com/DemerNkardaz/YAL"
+Issues = "https://github.com/DemerNkardaz/YAL/issues"
+
 [project.scripts]
 yal = "yal.cli:main"
 
