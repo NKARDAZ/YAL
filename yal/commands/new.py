@@ -1,14 +1,14 @@
 """
-Команда: yal create <kind>[:<name>][@<ref>]
+Команда: yal new <kind>[:<name>][@<ref>]
 
 Примеры:
-  yal create book
-  yal create book@latest
-  yal create book@1.7.1
-  yal create book@c651f7d
-  yal create book:default@1.7.1
-  yal create book:mytheme
-  yal create my-kind:default
+  yal new book
+  yal new book@latest
+  yal new book@1.7.1
+  yal new book@c651f7d
+  yal new book:default@1.7.1
+  yal new book:mytheme
+  yal new my-kind:default
 """
 
 from __future__ import annotations

@@ -171,7 +171,7 @@ yal make --mode print
 
 ## yal.template.toml
 
-A configuration file placed in the root of a template repository. When present, YAL uses it to interactively prompt the user for values during `yal create`, then applies them to target files in the new project.
+A configuration file placed in the root of a template repository. When present, YAL uses it to interactively prompt the user for values during `yal new`, then applies them to target files in the new project.
 
 ```toml
 [meta]

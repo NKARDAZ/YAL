@@ -5,11 +5,11 @@
 Структура записи:
   {
     "repo":    str,        # ссылка на GitHub-репозиторий
-    "exclude": list[str],  # файлы/папки, которые не копируются при create
+    "exclude": list[str],  # файлы/папки, которые не копируются при new
     "is_user": bool,       # True → пользовательский шаблон (user_store)
   }
 
-BOOK_REGISTRY["default"] — шаблон, используемый при `yal create book`
+BOOK_REGISTRY["default"] — шаблон, используемый при `yal new book`
                             (без указания :name).
 """
 
