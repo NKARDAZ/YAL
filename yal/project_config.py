@@ -169,6 +169,84 @@ def resolve_exec(exec_str: str | None, script_path: Path | None) -> list[str]:
     return []
 
 
+# Флаг "выполнить код напрямую" для каждого интерпретатора — позволяет
+# передать инлайн-скрипт как один CLI-аргумент, без записи на диск.
+_INLINE_FLAGS: dict[str, str] = {
+    "python3": "-c", "python": "-c",
+    "node": "-e", "ts-node": "-e",
+    "ruby": "-e",
+    "bash": "-c", "zsh": "-c", "fish": "-c", "sh": "-c",
+    "perl": "-e",
+    "lua": "-e",
+    "php": "-r",
+}
+
+
+def resolve_inline_exec(exec_str: str | None) -> list[str]:
+    """
+    Возвращает [interpreter, ..., flag] для запуска инлайн-скрипта
+    (cmd.script — многострочная строка) без создания временного файла:
+    весь код передаётся интерпретатору как один аргумент через его
+    собственный флаг "выполнить код" (-c/-e/-r).
+
+    «os-bash» → ["cmd", "/c"] на Windows, ["bash", "-c"] на Unix — флаг
+    уже включён в результат resolve_exec, отдельно его добавлять не нужно.
+
+    В отличие от resolve_exec, exec для инлайн-скрипта обязателен:
+    расширения файла, по которому можно было бы угадать интерпретатор,
+    здесь просто нет.
+    """
+    if exec_str is None:
+        raise ArgumentError(t("project.inline-exec-required"))
+
+    if exec_str.lower() == "os-bash":
+        if platform.system() == "Windows":
+            return ["cmd", "/c"]
+        return ["bash", "-c"]
+
+    parts = exec_str.split()
+    interpreter = parts[0]
+    flag = _INLINE_FLAGS.get(interpreter)
+    if flag is None:
+        raise ArgumentError(t("project.inline-exec-unsupported", exec=exec_str))
+
+    return parts + [flag]
+
+
+# Интерпретаторы, которые пытаются распарсить "--flag=value" как СВОЙ
+# собственный CLI-флаг, если не поставить разделитель "--" перед аргументами
+# скрипта. python3/python — протестированное исключение: ему "--" не нужен,
+# и он не вычищает его сам, так что лишний "--" просочился бы в sys.argv.
+_INLINE_NEEDS_SEPARATOR: set[str] = {
+    "bash", "zsh", "fish", "sh",
+    "node", "ts-node",
+    "ruby", "perl", "php",
+}
+
+# lua трактует первый позиционный аргумент после кода как путь к файлу-скрипту
+# для запуска — даже вместе с -e. Передать туда "--flag=value" и получить его
+# в `arg`, не наткнувшись на "cannot open <flag>", средствами самого lua CLI
+# невозможно — поэтому при наличии аргументов явно отказываем, а не теряем их.
+_INLINE_NO_EXTRA_ARGS: set[str] = {"lua"}
+
+
+def inline_extra_args(interpreter: str, flags: dict[str, str]) -> list[str]:
+    """
+    Формирует CLI-хвост с пользовательскими флагами для инлайн-запуска,
+    учитывая то, как конкретный интерпретатор разбирает свои аргументы.
+    """
+    if not flags:
+        return []
+
+    if interpreter in _INLINE_NO_EXTRA_ARGS:
+        raise ArgumentError(t("project.inline-args-unsupported", exec=interpreter))
+
+    extra: list[str] = ["--"] if interpreter in _INLINE_NEEDS_SEPARATOR else []
+    for flag, value in flags.items():
+        extra.append(f"{flag}={value}" if value else flag)
+    return extra
+
+
 # ─── валидация аргументов ─────────────────────────────────────────────────────
 
 class ArgumentError(ValueError):

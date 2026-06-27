@@ -7,7 +7,11 @@
 
 Поддерживаемые варианты:
   1. Скрипт-файл  — script = "/build/build.py", exec = "python3"
-  2. Inline-скрипт — script = multiline string, exec = "os-bash"
+  2. Inline-скрипт — script = многострочная строка, exec обязателен
+                      (например "os-bash", "python3", "node"...).
+                      Код передаётся интерпретатору напрямую через его
+                      флаг "выполнить код" (-c/-e/-r) — без временных
+                      файлов на диске.
   3. Макрос        — macros = "make --mode=print"
 """
 
@@ -27,10 +31,12 @@ from yal.project_config import (
     CommandDef,
     ProjectConfig,
     find_project_toml,
+    inline_extra_args,
     load,
     parse_user_args,
     project_root,
     resolve_exec,
+    resolve_inline_exec,
     resolve_script_path,
     validate_args,
 )
@@ -131,7 +137,31 @@ def _run_script(cmd: CommandDef, raw_argv: list[str], root: Path) -> None:
         print(f"[YAL] {e}")
         sys.exit(1)
 
-    _run_file(cmd, validated, root)
+    if cmd.is_inline_script:
+        _run_inline(cmd, validated, root)
+    else:
+        _run_file(cmd, validated, root)
+
+
+def _run_inline(cmd: CommandDef, validated: dict[str, str], root: Path) -> None:
+    """
+    Выполняет инлайн-скрипт (cmd.script — код, а не путь к файлу) напрямую,
+    без записи на диск: код передаётся интерпретатору как один аргумент
+    через его собственный флаг "выполнить код" (-c/-e/-r).
+    """
+    assert cmd.script is not None
+
+    try:
+        exec_parts = resolve_inline_exec(cmd.exec)
+        extra_args = inline_extra_args(exec_parts[0], validated)
+    except ArgumentError as e:
+        print(f"[YAL] {e}")
+        sys.exit(1)
+
+    cli = exec_parts + [cmd.script] + extra_args
+
+    print(f"[YAL] {t('project.running-inline', name=cmd.name)}")
+    _subprocess_run(cli, cwd=root)
 
 
 def _run_file(cmd: CommandDef, validated: dict[str, str], root: Path) -> None:
@@ -162,23 +192,6 @@ def _subprocess_run(
     if result.returncode != 0:
         print(f"[YAL] {t('project.script-failed', code=result.returncode)}")
         sys.exit(result.returncode)
-
-
-def _build_env(args: dict[str, str]) -> dict[str, str]:
-    """{"--mode": "print"} → {"YAL_MODE": "print"}"""
-    return {
-        "YAL_" + flag.lstrip("-").upper().replace("-", "_"): value
-        for flag, value in args.items()
-    }
-
-
-def _ext_for_exec(interpreter: str) -> str:
-    return {
-        "python3": ".py", "python": ".py",
-        "node": ".js", "ts-node": ".ts",
-        "ruby": ".rb", "perl": ".pl",
-        "lua": ".lua", "php": ".php",
-    }.get(interpreter, ".tmp")
 
 
 def _print_available(config: ProjectConfig | None) -> None:
