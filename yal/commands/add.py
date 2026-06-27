@@ -22,6 +22,7 @@
   yal add note:work from gitlab:mygroup/note-tpl
   yal add doc:corp from gitlab:git.corp.example.com:team/doc-template
   yal add book:sf from sourceforge:nkardaz@myproject/book
+  yal add book:mytheme from user/repo --commit
 """
 
 from __future__ import annotations
@@ -31,18 +32,9 @@ import sys
 import re
 
 from yal import user_store
-from yal.git_provider import (
-    expand_repo_shortcut,
-    validate_repo_url,
-    get_releases,
-    get_latest_commit,
-    get_commit,
-    download_release,
-    clone_repo,
-    ReleaseInfo,
-    _force_remove_readonly,
-)
+from yal.git_provider import expand_repo_shortcut, validate_repo_url
 from yal.i18n import t, yes_variants
+from yal.templates.handler import GenericHandler
 from yal.templates.registry import TemplateEntry
 from yal.templates import user_registry
 
@@ -50,7 +42,6 @@ from yal.templates import user_registry
 def run(args: argparse.Namespace) -> None:
     kind, name, ref, repo = _parse_spec(args.what, args.from_kw, args.repo)
 
-    # Проверяем, не зарегистрирован ли уже
     existing = user_registry.get_entry(kind, name)
     if existing is not None and existing.repo == repo:
         if ref is None:
@@ -72,10 +63,15 @@ def run(args: argparse.Namespace) -> None:
     else:
         exclude = None
 
-    entry = TemplateEntry(repo=repo, exclude=[])
+    entry = TemplateEntry(repo=repo, exclude=[], is_user=True)
+    handler = GenericHandler(kind)
 
     try:
-        version = _download(entry, kind, name, ref, force_commit=getattr(args, "commit", False))
+        version = handler._download(
+            entry, name, ref,
+            force_commit=getattr(args, "commit", False),
+            action="add",
+        )
     except (ValueError, RuntimeError) as e:
         print(f"[YAL] {t('create.error', error=e)}")
         sys.exit(1)
@@ -87,86 +83,6 @@ def run(args: argparse.Namespace) -> None:
 
     dest = user_store.user_template_dir(kind, name, version)
     print(f"[YAL] {t('add.registered', kind=kind, name=name, path=dest)}")
-
-
-# ─── скачивание ───────────────────────────────────────────────────────────────
-
-def _fetch_releases_safe(repo: str) -> list[ReleaseInfo]:
-    try:
-        return get_releases(repo)
-    except Exception as e:
-        print(f"[YAL] {t('errors.no-releases-warn', error=e)}")
-        return []
-
-
-def _download(entry: TemplateEntry, kind: str, name: str, ref: str | None, force_commit: bool = False) -> str:
-    if force_commit:
-        return _download_commit(entry, kind, name, ref)
-    releases = _fetch_releases_safe(entry.repo)
-    if releases:
-        return _download_release(entry, kind, name, ref, releases)
-    else:
-        return _download_commit(entry, kind, name, ref)
-
-
-def _download_release(
-    entry: TemplateEntry, kind: str, name: str, ref: str | None, releases: list[ReleaseInfo]
-) -> str:
-    if ref is None or ref == "latest":
-        target = releases[0]
-        version = target.tag.lstrip("vV")
-    else:
-        target = next((r for r in releases if r.tag in (ref, f"v{ref}")), None)
-        if target is None:
-            return _download_commit(entry, kind, name, ref)
-        version = target.tag.lstrip("vV")
-
-    if user_store.user_is_installed(kind, name, version):
-        print(f"[YAL] {t('create.using-local', version=version)}")
-        return version
-
-    if not _confirm_download(kind, name, version, t("download.release"), entry.repo):
-        raise RuntimeError(t("errors.cancelled", action=t("add.action")))
-
-    dest = user_store.user_template_dir(kind, name, version)
-    print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
-    download_release(target, dest)
-    user_store.user_save_meta(kind, name, version, "release", entry.repo, target.released_at)
-    print(f"[YAL] {t('download.done', path=dest)}")
-    return version
-
-
-def _download_commit(entry: TemplateEntry, kind: str, name: str, ref: str | None) -> str:
-    print(f"[YAL] {t('update.no-releases')}")
-    try:
-        info = (
-            get_latest_commit(entry.repo)
-            if (ref is None or ref == "latest")
-            else get_commit(entry.repo, ref)
-        )
-    except Exception as e:
-        raise RuntimeError(t("errors.commit-info-fail", error=e)) from e
-
-    version = info.sha7
-    if user_store.user_is_installed(kind, name, version):
-        print(f"[YAL] {t('create.using-local', version=version)}")
-        return version
-
-    if not _confirm_download(kind, name, version, t("download.commit"), entry.repo):
-        raise RuntimeError(t("errors.cancelled", action=t("add.action")))
-
-    dest = user_store.user_template_dir(kind, name, version)
-    print(f"[YAL] {t('download.commit-cloning', version=version)}")
-    try:
-        clone_repo(entry.repo, dest, ref=info.sha)
-    except Exception:
-        if dest.exists():
-            import shutil as _shutil
-            _shutil.rmtree(dest, onexc=_force_remove_readonly)
-        raise
-    user_store.user_save_meta(kind, name, version, "commit", entry.repo, info.released_at)
-    print(f"[YAL] {t('download.done', path=dest)}")
-    return version
 
 
 # ─── диалог исключений ────────────────────────────────────────────────────────
@@ -201,19 +117,7 @@ def _ask_excludes() -> list[str]:
     return excludes
 
 
-# ─── утилиты ──────────────────────────────────────────────────────────────────
-
-def _confirm_download(kind, name, version, source_type, repo) -> bool:
-    msg = t("download.confirm-user", kind=kind, name=name, source_type=source_type, version=version, repo=repo)
-    print(f"[YAL]{msg}", end="")
-    print(t("common.confirm-prompt"), end="", flush=True)
-    try:
-        answer = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return False
-    return answer in yes_variants()
-
+# ─── парсинг спецификации ─────────────────────────────────────────────────────
 
 def _parse_spec(what: str, from_kw: str | None, repo_spec: str | None) -> tuple[str, str, str | None, str]:
     """
@@ -224,7 +128,6 @@ def _parse_spec(what: str, from_kw: str | None, repo_spec: str | None) -> tuple[
       — Сокращением (user/repo, gitlab:user/repo, ...)
       — Путь к локальному git-репозиторию
     """
-    # Парсим what
     pattern = r"^(?P<kind>[^:@]+):(?P<name>[^@]+)(?:@(?P<ref>.+))?$"
     m = re.match(pattern, what.strip())
     if not m:

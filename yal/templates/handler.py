@@ -1,5 +1,12 @@
 """
 Универсальный обработчик шаблонов GenericHandler.
+
+Единая точка для всей логики "release vs commit": и `yal new`/`yal add`
+(через _resolve_version/_download), и `yal update` (через update_template)
+используют одни и те же низкоуровневые методы _fetch_release/_fetch_commit
+для собственно скачивания и сохранения метаданных. Раньше эта механика была
+продублирована ещё и в commands/add.py и commands/update.py — теперь она
+живёт только здесь.
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ class GenericHandler:
     def __init__(self, kind: str) -> None:
         self.kind = kind
 
+    # ── создание проекта (yal new) ────────────────────────────────────────────
+
     def create(
         self,
         entry: TemplateEntry,
@@ -35,7 +44,7 @@ class GenericHandler:
         resolved_version: str | None = None,
         force_commit: bool = False,
     ) -> CreateResult:
-        # Если версия уже определена снаружи (из create.py) — используем её,
+        # Если версия уже определена снаружи (из new.py) — используем её,
         # иначе определяем здесь (обратная совместимость).
         version = resolved_version if resolved_version is not None else self._resolve_version(entry, name, ref, force_commit)
         src = self._template_dir(entry, name, version)
@@ -90,14 +99,22 @@ class GenericHandler:
         name: str,
         ref: str | None,
         force_commit: bool = False,
+        action: str = "create",
     ) -> str:
+        """
+        Используется и из new.py (через _resolve_version), и напрямую
+        из commands/add.py при первой регистрации шаблона.
+
+        `action` — какой i18n-ключ `<action>.action` подставлять в сообщение
+        об отмене (`errors.cancelled`): "create" для yal new, "add" для yal add.
+        """
         if force_commit:
-            return self._download_commit(entry, name, ref)
+            return self._download_commit(entry, name, ref, action=action)
         releases = _fetch_releases_safe(entry.repo)
         if releases:
-            return self._download_release(entry, name, ref, releases)
+            return self._download_release(entry, name, ref, releases, action=action)
         else:
-            return self._download_commit(entry, name, ref)
+            return self._download_commit(entry, name, ref, action=action)
 
     def _download_release(
         self,
@@ -105,6 +122,7 @@ class GenericHandler:
         name: str,
         ref: str | None,
         releases: list[git_provider.ReleaseInfo],
+        action: str = "create",
     ) -> str:
         if ref is None or ref == "latest":
             target = releases[0]
@@ -114,7 +132,7 @@ class GenericHandler:
                 None,
             )
             if target is None:
-                return self._download_commit(entry, name, ref)
+                return self._download_commit(entry, name, ref, action=action)
 
         version = target.tag.lstrip("vV")
 
@@ -122,13 +140,7 @@ class GenericHandler:
             print(f"[YAL] {t('create.using-local', version=version)}")
             return version
 
-        if not self.confirm_download(name, version, t("download.release"), entry.repo, entry.is_user):
-            raise RuntimeError(t("errors.cancelled", action=t("create.action")))
-
-        dest = self._template_dir(entry, name, version)
-        print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
-        git_provider.download_release(target, dest)
-        self._save_meta(entry, name, version, "release", target.released_at)
+        dest = self._fetch_release(entry, name, version, target, action=action)
         print(f"[YAL] {t('download.done', path=dest)}")
         return version
 
@@ -137,6 +149,7 @@ class GenericHandler:
         entry: TemplateEntry,
         name: str,
         ref: str | None,
+        action: str = "create",
     ) -> str:
         print(f"[YAL] {t('update.no-releases')}")
 
@@ -154,8 +167,95 @@ class GenericHandler:
             print(f"[YAL] {t('create.using-local', version=version)}")
             return version
 
+        dest = self._fetch_commit(entry, name, version, info, action=action)
+        print(f"[YAL] {t('download.done', path=dest)}")
+        return version
+
+    # ── обновление шаблона (yal update) ───────────────────────────────────────
+
+    def update_template(
+        self,
+        entry: TemplateEntry,
+        name: str,
+        force_commit: bool = False,
+    ) -> None:
+        """Полная логика команды `yal update` для одного шаблона."""
+        if force_commit:
+            self._update_commit(entry, name)
+            return
+        releases = _fetch_releases_safe(entry.repo)
+        if releases:
+            self._update_release(entry, name, releases)
+        else:
+            self._update_commit(entry, name)
+
+    def _update_release(self, entry: TemplateEntry, name: str, releases: list[git_provider.ReleaseInfo]) -> None:
+        latest = releases[0]
+        version = latest.tag.lstrip("vV")
+
+        if self._is_installed(entry, name, version):
+            print(f"[YAL] {t('update.already-latest', version=version)}")
+            return
+
+        local = self._get_most_recent_local(entry, name)
+        if local:
+            print(f"[YAL] {t('update.upgrading', kind=self.kind, name=name, old=local, new=version)}")
+        else:
+            print(f"[YAL] {t('update.installing', kind=self.kind, name=name, version=version)}")
+
+        dest = self._fetch_release(entry, name, version, latest, action="update")
+        print(f"[YAL] {t('update.installed', path=dest)}")
+
+    def _update_commit(self, entry: TemplateEntry, name: str) -> None:
+        try:
+            info = git_provider.get_latest_commit(entry.repo)
+        except Exception as e:
+            raise RuntimeError(t("update.commit-fail", error=e)) from e
+
+        version = info.sha7
+
+        if self._is_installed(entry, name, version):
+            print(f"[YAL] {t('update.already-latest-commit', version=version)}")
+            return
+
+        local_versions = self._installed_versions(entry, name)
+        if local_versions:
+            print(f"[YAL] {t('update.upgrading-commit', kind=self.kind, name=name, old=local_versions[-1], new=version)}")
+        else:
+            print(f"[YAL] {t('update.installing-commit', kind=self.kind, name=name, version=version)}")
+
+        dest = self._fetch_commit(entry, name, version, info, action="update")
+        print(f"[YAL] {t('update.installed', path=dest)}")
+
+    # ── единственное место, где мы реально что-то скачиваем и сохраняем ──────
+
+    def _fetch_release(
+        self,
+        entry: TemplateEntry,
+        name: str,
+        version: str,
+        target: git_provider.ReleaseInfo,
+        action: str = "create",
+    ) -> Path:
+        if not self.confirm_download(name, version, t("download.release"), entry.repo, entry.is_user):
+            raise RuntimeError(t("errors.cancelled", action=t(f"{action}.action")))
+
+        dest = self._template_dir(entry, name, version)
+        print(f"[YAL] {t('download.release-downloading', tag=target.tag)}")
+        git_provider.download_release(target, dest)
+        self._save_meta(entry, name, version, "release", target.released_at)
+        return dest
+
+    def _fetch_commit(
+        self,
+        entry: TemplateEntry,
+        name: str,
+        version: str,
+        info,  # CommitInfo-подобный объект из git_provider (.sha, .released_at)
+        action: str = "create",
+    ) -> Path:
         if not self.confirm_download(name, version, t("download.commit"), entry.repo, entry.is_user):
-            raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+            raise RuntimeError(t("errors.cancelled", action=t(f"{action}.action")))
 
         dest = self._template_dir(entry, name, version)
         print(f"[YAL] {t('download.commit-cloning', version=version)}")
@@ -167,8 +267,7 @@ class GenericHandler:
                 _shutil.rmtree(dest, onexc=git_provider._force_remove_readonly)
             raise
         self._save_meta(entry, name, version, "commit", info.released_at)
-        print(f"[YAL] {t('download.done', path=dest)}")
-        return version
+        return dest
 
     # ── Адаптеры к хранилищам ─────────────────────────────────────────────────
 
