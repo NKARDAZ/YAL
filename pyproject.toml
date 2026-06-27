@@ -20,9 +20,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DemerNkardaz/YAL"
-Repository = "https://github.com/DemerNkardaz/YAL"
-Issues = "https://github.com/DemerNkardaz/YAL/issues"
+Homepage = "https://github.com/NKARDAZ/YAL"
+Repository = "https://github.com/NKARDAZ/YAL"
+Issues = "https://github.com/NKARDAZ/YAL/issues"
 
 [project.scripts]
 yal = "yal.cli:main"
