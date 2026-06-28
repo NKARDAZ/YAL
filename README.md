@@ -2,22 +2,35 @@
 
 <img src="logo.svg" width="48" align="left" />
 
-**YAL** is a command-line utility for project initialization and updates based on templates from git repositories.
+**YAL** is a command-line utility for project initialization and updates based
+on templates from git repositories.
 
-It also supports project-local commands (similar to Makefile targets or scripts in package.json). Define them in `yal.toml` and invoke them with `yal <command>`.
+It also supports project-local commands (similar to Makefile targets or scripts
+in package.json). Define them in `yal.toml` and invoke them with
+`yal <command>`.
 
 ## Commands
 
-- `yal new <kind>[:<name>][@<ref>]` — uses a template to create a new project; if name is not specified, the `default` template will be used
-- `yal update <kind>[:<name>]` — downloads and caches the latest version of a template
-- `yal add <kind>:<name>[@<ref>] from <repository URL | user/repo>` — registers an external template from GitHub with the specified name
-- `yal remove <kind>[:<name>[@<version>]]` — removes a template from the local storage; if name is not specified, all templates of the given kind will be removed
+- `yal new <kind>[:<name>][@<ref>] [--commit]` — uses a template to create a new
+  project; if name is not specified, the `default` template will be used
+- `yal update <kind>[:<name>] [--commit]` — downloads and caches the latest
+  version of a template
+- `yal add <kind>:<name>[@<ref>] from <repository URL | user/repo> [--commit]` —
+  registers an external template from GitHub with the specified name
+- `yal remove <kind>[:<name>[@<version>]]` — removes a template from the local
+  storage; if name is not specified, all templates of the given kind will be
+  removed
+
+`--commit` (on `new`, `update`, `add`) skips release lookup entirely and
+resolves against the latest matching commit instead — useful when a repository
+has tagged releases but you specifically want unreleased work.
 
 ---
 
 ## Create a project
 
-Downloads the template (if not cached locally) and initiates the configuration process.
+Downloads the template (if not cached locally) and initiates the configuration
+process.
 
 ```bash
 # Basic usage — uses the "default" template, latest version
@@ -32,26 +45,38 @@ yal new book@c651f7d
 
 # Combined
 yal new book:my-theme@1.7.1
+
+# Skip releases, use the latest commit instead
+yal new book --commit
 ```
 
-If the requested version is already cached locally, YAL skips the download. If no version is specified, YAL uses the most recent locally cached version; if none is cached, it downloads the latest release (or the latest commit if the repository has no releases).
+If the requested version is already cached locally, YAL skips the download. If
+no version is specified, YAL uses the most recent locally cached version; if
+none is cached, it downloads the latest release (or the latest commit if the
+repository has no releases). Pass `--commit` to skip the release lookup entirely
+and resolve straight to the latest matching commit, even when releases exist.
 
 ---
 
 ## Update a template
 
-Downloads and caches the latest version of a template without creating a project. Useful for pre-caching before working offline.
+Downloads and caches the latest version of a template without creating a
+project. Useful for pre-caching before working offline.
 
 ```bash
 yal update book
 yal update book:my-theme
+
+# Skip releases, update to the latest commit instead
+yal update book --commit
 ```
 
 ---
 
 ## Add an external template
 
-Registers a GitHub repository as a named template under a given kind, then downloads it.
+Registers a GitHub repository as a named template under a given kind, then
+downloads it.
 
 ```bash
 # Register and download the latest release (or commit)
@@ -63,7 +88,14 @@ yal add book:my-theme <other git service/local repo>
 
 # Register a specific version
 yal add book:my-theme@1.2.0 from user/my-book-template
+
+# Skip releases, register and download the latest commit instead
+yal add book:my-theme from user/my-book-template --commit
 ```
+
+`<kind>:<name>` must not collide with a built-in template —
+`yal add book:default from ...` is rejected, since `book:default` already ships
+with YAL. Register under a different name instead (e.g. `book:my-theme`).
 
 After registration the template is available like any built-in one:
 
@@ -72,12 +104,13 @@ yal new book:my-theme
 yal update book:my-theme
 ```
 
-Registered templates are stored in `~/.yal/user-templates.toml`. Downloaded files go to `~/.yal/user-templates/<kind>/<name>/<version>/`.
-
+Registered templates are stored in `~/.yal/user-templates.toml`. Downloaded
+files go to `~/.yal/user-templates/<kind>/<name>/<version>/`.
 
 ## Git
 
-You can use any Git hosting service or a local repository. Built-in shortcuts are available for a number of services:
+You can use any Git hosting service or a local repository. Built-in shortcuts
+are available for a number of services:
 
 ```bash
 user/repo # Github
@@ -104,7 +137,8 @@ yal add my-local-repos:default from /path/to/local/repo
 
 ## Remove a template
 
-Removes cached template files from local storage. When all versions of a user-registered template are removed, its registry entry is also deleted.
+Removes cached template files from local storage. When all versions of a
+user-registered template are removed, its registry entry is also deleted.
 
 ```bash
 # Remove all cached versions of all "book" templates
@@ -123,7 +157,9 @@ yal remove book:my-theme@c651f7d
 
 ## yal.toml
 
-A configuration file placed in the root of the created project. It stores metadata about the template used and lets you define local commands for the project.
+A configuration file placed in the root of the created project. It stores
+metadata about the template used and lets you define local commands for the
+project.
 
 ```toml
 [origin]
@@ -146,7 +182,35 @@ macros = "make --mode=print"
 # yal make print → expands to → yal make --mode=print
 ```
 
-If `yal.toml` is not present in the template, it will be created automatically with a default `[origin]` section filled in on project creation.
+### Inline scripts
+
+`script` doesn't have to be a path — it can contain the code itself as a
+multi-line string. In that case `exec` is required (there's no file extension to
+infer the interpreter from), and the code is passed directly to the interpreter
+via its own "run code" flag (`-c`/`-e`/`-r`) — nothing is written to disk.
+
+```toml
+[[command]]
+name = "hello"
+exec = "python3"
+script = """
+def greet():
+    print("Hello from an inline script!")
+
+greet()
+"""
+```
+
+Supported `exec` values for inline scripts: `python3`/`python`,
+`node`/`ts-node`, `ruby`, `perl`, `php`, `bash`/`zsh`/`fish`/`sh`, `os-bash`,
+`lua`. Arguments (`arguments = {...}`) work the same as with file scripts — with
+one exception: `lua` doesn't support passing extra arguments to inline code (its
+CLI always treats the first extra argument as a script file to run), so
+`yal.toml` rejects arguments on `lua` inline scripts rather than silently
+dropping them.
+
+If `yal.toml` is not present in the template, it will be created automatically
+with a default `[origin]` section filled in on project creation.
 
 ### Commands
 
@@ -173,7 +237,9 @@ yal make --mode print
 
 ## yal.template.toml
 
-A configuration file placed in the root of a template repository. When present, YAL uses it to interactively prompt the user for values during `yal new`, then applies them to target files in the new project.
+A configuration file placed in the root of a template repository. When present,
+YAL uses it to interactively prompt the user for values during `yal new`, then
+applies them to target files in the new project.
 
 ```toml
 [meta]
@@ -194,7 +260,7 @@ default = "Anonymous"
 
 [[fields]]
 id      = "license"
-type    = "text"
+type    = "select"
 options = ["MIT", "Apache-2.0", "GPL-3.0"]
 default = "MIT"
 
@@ -213,18 +279,54 @@ author.prompt       = "Имя автора"
 
 Each `[[fields]]` entry supports:
 
-| Field            | Description                                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| `id`             | Unique identifier, used as key in mappings and message lookups                                               |
-| `type`           | Input type; currently `text`                                                                                 |
-| `required`       | If `true`, the user must provide a non-empty value                                                           |
-| `default`        | Default value used if the user presses Enter without typing. Use `"{placeholder}"` to mirror the placeholder |
-| `options`        | If non-empty, restricts accepted values to this list                                                         |
-| `is-folder-name` | If `true`, the field's value becomes the name of the created project folder                                  |
+| Field            | Description                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | Unique identifier, used as key in mappings and message lookups                                                                                                                               |
+| `type`           | Input type: `text`, `select`, `multi-select`, or `boolean` (see Field types below)                                                                                                           |
+| `required`       | If `true`, the user must provide a non-empty value (for `multi-select`, at least one item)                                                                                                   |
+| `default`        | Default value used if the user presses Enter without typing. Use `"{placeholder}"` to mirror the placeholder. For `boolean`/`multi-select`, a native TOML `true`/`false` or array also works |
+| `options`        | The list of choices — required for `select` and `multi-select`                                                                                                                               |
+| `is-folder-name` | If `true`, the field's value becomes the name of the created project folder (only meaningful for `text`)                                                                                     |
+
+### Field types
+
+**`text`** — free-form input. `options`, if given, is just a hint and isn't enforced.
+
+**`select`** — exactly one value from `options`. In an interactive terminal this renders as an arrow-key picker (`↑`/`↓` to move, `Enter` to confirm); when stdin isn't a real terminal (pipes, CI), it falls back to typed input validated against `options`.
+
+```toml
+[[fields]]
+id      = "license"
+type    = "select"
+options = ["MIT", "Apache-2.0", "GPL-3.0"]
+default = "MIT"
+```
+
+**`multi-select`** — zero or more values from `options`, picked with `Space` to toggle and `Enter` to confirm (or comma-separated typed input as a fallback). The collected value is a list and is written natively to YAML/JSON/TOML targets; for `.env` targets it's joined with commas.
+
+```toml
+[[fields]]
+id      = "features"
+type    = "multi-select"
+options = ["auth", "billing", "search"]
+default = ["auth", "search"]   # or default = "auth,search"
+```
+
+**`boolean`** — a yes/no prompt (`[y/N]`/`[Y/n]` depending on `default`). Written as a native `true`/`false` to YAML/JSON/TOML, and as the string `"true"`/`"false"` to `.env`.
+
+```toml
+[[fields]]
+id      = "use-ci"
+type    = "boolean"
+default = true
+```
+
+An unknown `type`, or a `select`/`multi-select` without `options`, falls back to plain text input with a warning — it won't crash project creation.
 
 ### Targets
 
-After collecting field values, YAL writes them into files specified under `[[targets]]`:
+After collecting field values, YAL writes them into files specified under
+`[[targets]]`:
 
 ```toml
 [[targets]]
@@ -261,11 +363,14 @@ format = "yaml"
 | `${RANDOM}`    | Random integer 0 – 2³¹−1        |
 | `${NULL}`      | Sets the YAML key to `~` (null) |
 
-Field values can be interpolated with `{field-id}` syntax and combined freely with generators: `"© {author}, ${YEAR}"`.
+Field values can be interpolated with `{field-id}` syntax and combined freely
+with generators: `"© {author}, ${YEAR}"`.
 
 ### Localization
 
-Messages support per-language overrides. YAL detects the system locale automatically and falls back to the base (top-level) messages if no translation is found for the current language.
+Messages support per-language overrides. YAL detects the system locale
+automatically and falls back to the base (top-level) messages if no translation
+is found for the current language.
 
 ```toml
 [messages]
@@ -285,9 +390,12 @@ project-name.prompt = "Название проекта"
 - **Name:** `default`
 - **Use:** `yal new book`
 
-A template for creating a book using [Typst](https://typst.app/), including a prebuilt structure, plugins, styles, settings, and a build system combining Typst and Python tools.
+A template for creating a book using [Typst](https://typst.app/), including a
+prebuilt structure, plugins, styles, settings, and a build system combining
+Typst and Python tools.
 
-**Requirements:** [Typst compiler](https://github.com/typst/typst/releases) and the following Python packages:
+**Requirements:** [Typst compiler](https://github.com/typst/typst/releases) and
+the following Python packages:
 
 ```bash
 pip install pyyaml pikepdf pillow
@@ -297,7 +405,9 @@ pip install pyyaml pikepdf pillow
 
 ## Custom templates
 
-Any public repository can be registered as a template. The repository does not need to contain a `yal.template.toml` — YAL will copy it as-is and create a default `yal.toml` in the resulting project.
+Any public repository can be registered as a template. The repository does not
+need to contain a `yal.template.toml` — YAL will copy it as-is and create a
+default `yal.toml` in the resulting project.
 
 ```bash
 # Register under a new kind "vue", name "default"
@@ -376,20 +486,25 @@ author.placeholder       = "Your Name"
   user-templates.toml             # user registry (managed by yal add / yal remove)
 ```
 
-`yal-meta.json` stores the kind, name, version, source type (`release` or `commit`), repository URL, release date, and install date for each cached template.
+`yal-meta.json` stores the kind, name, version, source type (`release` or
+`commit`), repository URL, release date, and install date for each cached
+template.
 
 ---
 
 ## Authentication
 
-YAL supports using personal access tokens to access private repositories and to reduce API rate limits.
+YAL supports using personal access tokens to access private repositories and to
+reduce API rate limits.
 
 - For provider HTTP APIs, YAL recognizes these environment variables:
   - `GITHUB_TOKEN` or `GH_TOKEN` — GitHub API
   - `GITLAB_TOKEN` or `GL_TOKEN` — GitLab API
   - `CODEBERG_TOKEN` or `FORGEJO_TOKEN` — Codeberg / Forgejo API
 
-- For Git operations (`git ls-remote`, `git clone`) YAL will, when a token is available for the host, inject it into HTTPS URLs as a practical fallback. Supported variables for HTTPS auth include:
+- For Git operations (`git ls-remote`, `git clone`) YAL will, when a token is
+  available for the host, inject it into HTTPS URLs as a practical fallback.
+  Supported variables for HTTPS auth include:
   - `BITBUCKET_TOKEN` — Bitbucket HTTPS access
   - `SOURCEFORGE_TOKEN` — SourceForge HTTPS access
   - `GITVERSE_TOKEN` — gitverse.ru HTTPS access
@@ -413,4 +528,6 @@ export SOURCEFORGE_TOKEN=...
 export GITVERSE_TOKEN=...
 ```
 
-Note: token injection into URLs is only performed for HTTPS remotes and only when the corresponding environment variable is set. SSH remotes (`git@...`) are left unchanged and use SSH keys.
+Note: token injection into URLs is only performed for HTTPS remotes and only
+when the corresponding environment variable is set. SSH remotes (`git@...`) are
+left unchanged and use SSH keys.
