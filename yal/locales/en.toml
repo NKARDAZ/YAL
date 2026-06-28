@@ -44,7 +44,13 @@ no-config        = "yal.template.toml not found — template will be copied with
 target-not-found = "Error: target file {path} not found."
 field-required   = "This field is required."
 field-select-hint = "Enter one of: {options}"
+field-multiselect-hint = "Enter one or more, comma-separated: {options}"
 field-invalid-option = "Invalid option. Available: {options}"
+field-no-options = "Field '{id}' (type '{type}') has no options defined — falling back to text input."
+field-unknown-type = "Field '{id}' has unknown type '{type}' — falling back to text input."
+field-picker-hint-single = "(↑/↓ navigate, Enter confirm)"
+field-picker-hint-multi = "(↑/↓ navigate, Space toggle, Enter confirm)"
+field-required-hint = "(select at least one)"
 executing = "Executing: {name}"
 executing-failed = "Command failed: {name}. Error: {error}"
 

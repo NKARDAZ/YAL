@@ -24,8 +24,8 @@ else:
         import tomli as tomllib  # type: ignore[no-redef]
 
 
-from yal.i18n import t, current_lang
-from yal import generators
+from yal.i18n import t, current_lang, yes_variants
+from yal import generators, picker
 
 _tomli_w = None
 try:
@@ -76,6 +76,11 @@ yaml_parser.representer.add_representer(type(None), _represent_none)
 
 # ─── модели ───────────────────────────────────────────────────────────────────
 
+# Известные типы полей. Неизвестный type трактуется как "text" с предупреждением —
+# в духе остального кода (неизвестный формат target тоже не валит выполнение).
+KNOWN_FIELD_TYPES: frozenset[str] = frozenset({"text", "select", "multi-select", "boolean"})
+
+
 @dataclass
 class FieldDef:
     id: str
@@ -125,7 +130,7 @@ def load(template_dir: Path) -> YalConfig | None:
 def _parse(raw: dict[str, Any]) -> YalConfig:
     meta = raw.get("meta", {})
     fields = [FieldDef(id=fd["id"], type=fd.get("type", "text"), required=fd.get("required", False),
-                       default=fd.get("default", ""), options=fd.get("options", []),
+                       default=generators.to_str(fd.get("default", "")), options=fd.get("options", []),
                        is_folder_name=fd.get("is-folder-name", False)) for fd in raw.get("fields", [])]
 
     targets = []
@@ -187,8 +192,8 @@ def run_post_commands(commands: list[str], dest_dir: Path) -> None:
 
 # ─── интерактивный сбор ───────────────────────────────────────────────────────
 
-def collect(config: YalConfig) -> dict[str, str]:
-    values = {}
+def collect(config: YalConfig) -> dict[str, Any]:
+    values: dict[str, Any] = {}
     for fd in config.fields:
         prompt = _get_msg(config, fd.id, "prompt", fd.id)
         placeholder = _get_msg(config, fd.id, "placeholder", "")
@@ -197,7 +202,25 @@ def collect(config: YalConfig) -> dict[str, str]:
     return values
 
 
-def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
+def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> Any:
+    """Диспетчер по типу поля. Неизвестный/непригодный type — graceful fallback на text."""
+    if fd.type in ("select", "multi-select") and not fd.options:
+        print(f"[YAL] {t('config.field-no-options', id=fd.id, type=fd.type)}")
+        return _ask_text(fd, prompt_text, placeholder, default)
+
+    if fd.type == "boolean":
+        return _ask_boolean(fd, prompt_text, default)
+    if fd.type == "select":
+        return _ask_select(fd, prompt_text, default)
+    if fd.type == "multi-select":
+        return _ask_multi_select(fd, prompt_text, default)
+
+    if fd.type not in KNOWN_FIELD_TYPES:
+        print(f"[YAL] {t('config.field-unknown-type', id=fd.id, type=fd.type)}")
+    return _ask_text(fd, prompt_text, placeholder, default)
+
+
+def _ask_text(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
     while True:
         display_default = f" [{default}]" if default else ""
         print(f"[YAL] {prompt_text}{display_default}: ", end="", flush=True)
@@ -209,6 +232,106 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
         if fd.required and not value:
             continue
         return value
+
+
+def _ask_boolean(fd: FieldDef, prompt_text: str, default: str) -> bool:
+    """
+    Да/нет в духе остальных confirm-диалогов приложения (yes_variants()).
+    required для boolean смысла не имеет — False сам по себе валидный ответ,
+    "пустого" значения для bool не существует.
+    """
+    default_value = default.strip().lower() in _TRUE_STRINGS if default else False
+    hint = " [Y/n]" if default_value else " [y/N]"
+    print(f"[YAL] {prompt_text}{hint}: ", end="", flush=True)
+    try:
+        raw = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+    if not raw:
+        return default_value
+    return raw in yes_variants()
+
+
+def _ask_select(fd: FieldDef, prompt_text: str, default: str) -> str:
+    """Один вариант из fd.options."""
+    options = fd.options
+
+    if picker.is_interactive():
+        initial_index = options.index(default) if default in options else 0
+        chosen = picker.pick(prompt_text, options, multi=False, initial_index=initial_index)
+        return options[chosen[0]]
+
+    # Fallback для неинтерактивного stdin (пайп/редирект/тесты/CI) —
+    # точное совпадение строки, без учёта регистра не приводим.
+    hint = t("config.field-select-hint", options=", ".join(options))
+    while True:
+        display_default = f" [{default}]" if default else ""
+        print(f"[YAL] {prompt_text}{display_default}\n      {hint}: ", end="", flush=True)
+        try:
+            raw = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+        value = raw if raw else default
+        if not value:
+            if fd.required:
+                print(f"[YAL] {t('config.field-required')}")
+                continue
+            return ""
+        if value not in options:
+            print(f"[YAL] {t('config.field-invalid-option', options=', '.join(options))}")
+            continue
+        return value
+
+
+def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str) -> list[str]:
+    """Несколько вариантов из fd.options. Возвращает list[str], без дублей."""
+    options = fd.options
+    default_list = [v.strip() for v in default.split(",") if v.strip()] if default else []
+
+    if picker.is_interactive():
+        initial_checked = {options.index(v) for v in default_list if v in options}
+        chosen = picker.pick(
+            prompt_text, options, multi=True,
+            initial_checked=initial_checked, required=fd.required,
+        )
+        return [options[i] for i in chosen]
+
+    # Fallback для неинтерактивного stdin (пайп/редирект/тесты/CI) —
+    # ввод через запятую.
+    hint = t("config.field-multiselect-hint", options=", ".join(options))
+    while True:
+        display_default = f" [{', '.join(default_list)}]" if default_list else ""
+        print(f"[YAL] {prompt_text}{display_default}\n      {hint}: ", end="", flush=True)
+        try:
+            raw = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+
+        chosen = [v.strip() for v in raw.split(",") if v.strip()] if raw else default_list
+
+        if not chosen:
+            if fd.required:
+                print(f"[YAL] {t('config.field-required')}")
+                continue
+            return []
+
+        invalid = [v for v in chosen if v not in options]
+        if invalid:
+            print(f"[YAL] {t('config.field-invalid-option', options=', '.join(options))}")
+            continue
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for v in chosen:
+            if v not in seen:
+                seen.add(v)
+                result.append(v)
+        return result
+
+
+# Канонические "истинные" строки для default булевых полей (не зависит от
+# локали — это конфиг шаблона, а не пользовательский ввод).
+_TRUE_STRINGS: frozenset[str] = frozenset({"true", "1", "yes", "on"})
 
 
 def _get_msg(config: YalConfig, fid: str, key: str, fallback: str) -> str:
@@ -328,7 +451,7 @@ def _apply_env(target: "TargetDef", values: dict[str, Any], file_path: Path) -> 
         should_set, val = _resolve_mapping(m, values)
         if should_set:
             key = m.key.split(".")[-1]  # dot-нотацию игнорируем, берём последний сегмент
-            updates[key] = val
+            updates[key] = None if val is None else generators.to_str(val)
 
     written: set[str] = set()
     result: list[str] = []
@@ -377,11 +500,11 @@ def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> tuple[boo
         raw_val = generators.resolve(m.value, values)
 
     # Fallback
-    if (raw_val is None or raw_val == "") and m.fallback is not None:
+    if _is_empty(raw_val) and m.fallback is not None:
         raw_val = generators.resolve(m.fallback, values)
 
     # Если ничего не нашли — пропускаем запись
-    if raw_val is None or raw_val == "":
+    if _is_empty(raw_val):
         return False, None
 
     # Если нашли наш маркер — это значит "установить значение в None"
@@ -389,6 +512,14 @@ def _resolve_mapping(m: TargetFieldMapping, values: dict[str, Any]) -> tuple[boo
         return True, None
 
     return True, raw_val
+
+
+def _is_empty(value: Any) -> bool:
+    """
+    "Пусто" для text — "", для multi-select — []. boolean False НЕ считается
+    пустым — это полноценный, осознанно выбранный ответ, а не отсутствие ввода.
+    """
+    return value is None or value == "" or value == []
 
 
 def _set_nested_path(data: dict, key_path: str, value: Any) -> None:
@@ -417,8 +548,12 @@ def _parse_key_path(key_path: str) -> list[str | int]:
     return result
 
 
-def get_folder_name(config: YalConfig, values: dict[str, str]) -> str | None:
+def get_folder_name(config: YalConfig, values: dict[str, Any]) -> str | None:
     for fd in config.fields:
         if fd.is_folder_name:
-            return values.get(fd.id)
+            val = values.get(fd.id)
+            # is-folder-name имеет смысл только для текстовых значений —
+            # bool/list (boolean, multi-select) сюда не годятся, откатываемся
+            # на дефолтное имя папки, а не роняем Path(...) на не-str.
+            return val if isinstance(val, str) and val else None
     return None

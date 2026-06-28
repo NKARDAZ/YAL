@@ -40,7 +40,7 @@ import random
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Callable, Union
+from typing import Any, Callable, Union
 
 # ─── реестр генераторов ───────────────────────────────────────────────────────
 
@@ -153,7 +153,7 @@ def resolve(value: str, fields: dict[str, str] | None = None) -> str | int | Non
         step1 = _GEN_PART_RE.sub(_sub_gen_to_str, value)
 
         # Заменяем поля
-        result = _INTERP_PART_RE.sub(lambda m: resolved_fields.get(m.group(1), ""), step1)
+        result = _INTERP_PART_RE.sub(lambda m: to_str(resolved_fields.get(m.group(1), "")), step1)
 
         # Если после всех замен строка пуста, возвращаем None
         return result if result else None
@@ -165,3 +165,21 @@ def resolve(value: str, fields: dict[str, str] | None = None) -> str | int | Non
 def known_generators() -> list[str]:
     """Возвращает отсортированный список зарегистрированных имён."""
     return sorted(_REGISTRY.keys())
+
+
+def to_str(value: Any) -> str:
+    """
+    Приводит произвольное значение поля к строке: используется и при
+    интерполяции {field-name} (resolve() ниже строит результат через
+    re.sub, который требует строку), и в template_config.py — при
+    нормализации FieldDef.default (TOML может хранить его как нативный
+    bool/array, а не строку) и при записи булевых/multi-select полей
+    в .env (там значения всегда плоские строки).
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value)
+    return str(value)
