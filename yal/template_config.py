@@ -15,6 +15,8 @@ from ruamel.yaml import YAML
 import subprocess
 import shlex
 
+from yal.version import get_version
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -163,25 +165,29 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
         targets.append(TargetDef(file=td["file"], format=td.get("format", "yaml"), mappings=mappings))
 
     raw_messages = raw.get("messages", {})
-    messages = {}
+    field_ids = {fd.id for fd in fields}
+    messages: dict[str, dict[str, dict[str, Any]]] = {"_base": {}}
 
-    base_msgs = {}
-    for fid, msg in raw_messages.items():
-        if not isinstance(msg, dict) or any(k in msg for k in ["prompt", "placeholder"]):
-            base_msgs[fid] = (msg if isinstance(msg, dict) else {"prompt": str(msg)})
+    for key, value in raw_messages.items():
+        if not isinstance(value, dict):
+            # Короткая форма: messages.book-genre = "Enter book genre"
+            messages["_base"][key] = {"prompt": str(value)}
+            continue
 
-    messages["_base"] = base_msgs
-
-    # 2. Извлекаем языковые секции
-    for lang, data in raw_messages.items():
-        if isinstance(data, dict) and not any(k in data for k in ["prompt", "placeholder"]):
-            messages[lang] = {
+        if key in field_ids:
+            # messages.<field-id> — базовые (не локализованные) сообщения поля.
+            # Сюда попадёт всё целиком: prompt, placeholder, option.*, и любые
+            # другие произвольные ключи — без хардкода на конкретные имена.
+            messages["_base"][key] = value
+        else:
+            # messages.<lang> — секция локализации; внутри — снова field-id → message-dict.
+            messages[key] = {
                 fid: (msg if isinstance(msg, dict) else {"prompt": str(msg)})
-                for fid, msg in data.items()
+                for fid, msg in value.items()
             }
 
     return YalConfig(
-        min_version=meta.get("yal-min-version", "0.0.0"),
+        min_version=meta.get("yal-min-version", get_version()),
         fields=fields,
         targets=targets,
         messages=messages,
@@ -215,11 +221,11 @@ def collect(config: YalConfig) -> dict[str, Any]:
         prompt = _get_msg(config, fd.id, "prompt", fd.id)
         placeholder = _get_msg(config, fd.id, "placeholder", "")
         default = placeholder if fd.default == "{placeholder}" else fd.default
-        values[fd.id] = _ask(fd, prompt, placeholder, default)
+        values[fd.id] = _ask(fd, prompt, placeholder, default, config)
     return values
 
 
-def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> Any:
+def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str, config: YalConfig) -> Any:
     """Диспетчер по типу поля. Неизвестный/непригодный type — graceful fallback на text."""
     if fd.type in ("select", "multi-select") and not fd.options:
         print(f"[YAL] {t('config.field-no-options', id=fd.id, type=fd.type)}")
@@ -228,9 +234,9 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> Any:
     if fd.type == "boolean":
         return _ask_boolean(fd, prompt_text, default)
     if fd.type == "select":
-        return _ask_select(fd, prompt_text, default)
+        return _ask_select(fd, prompt_text, default, config)
     if fd.type == "multi-select":
-        return _ask_multi_select(fd, prompt_text, default)
+        return _ask_multi_select(fd, prompt_text, default, config)
     if fd.type == "number":
         return _ask_number(fd, prompt_text, default)
     if fd.type == "list":
@@ -283,24 +289,31 @@ def _ask_boolean(fd: FieldDef, prompt_text: str, default: str) -> bool:
     return raw in yes_variants()
 
 
-def _ask_select(fd: FieldDef, prompt_text: str, default: str) -> str:
-    """Один вариант из fd.options с адаптивным кастомным вводом."""
-    custom_label = t("config.field-select-custom")
-    custom_option = custom_label if fd.allow_custom else None
+# Сентинел "это пункт кастомного ввода", а не значение опции. Объект, а не
+# строка — чтобы не было ложного совпадения, если реальная опция случайно
+# совпадёт с локализованным текстом "Custom...".
+_CUSTOM = object()
 
-    display_options = list(fd.options)
-    if custom_option:
-        display_options.insert(0, custom_option)
-        if len(fd.options) >= 7:
-            display_options.append(custom_option)
+
+def _option_label(fd: FieldDef, config: YalConfig, opt: str) -> str:
+    """Текст опции для отображения: код + описание из messages.<id>.option.<opt>, если задано."""
+    description = _get_msg(config, fd.id, f"option.{opt}", "")
+    return f"{opt} — {description}" if description else opt
+
+
+def _ask_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig) -> str:
+    custom_label = t("config.field-select-custom")
+
+    option_values: list[Any] = list(fd.options)
+    display_options = [_option_label(fd, config, opt) for opt in fd.options]
+    if fd.allow_custom:
+        option_values.append(_CUSTOM)
+        display_options.append(custom_label)
 
     if picker.is_interactive():
-        initial_index = 0
-        if default in fd.options:
-            initial_index = display_options.index(default)
-
+        initial_index = fd.options.index(default) if default in fd.options else 0
         chosen = picker.pick(prompt_text, display_options, multi=False, initial_index=initial_index)
-        value = display_options[chosen[0]]
+        value = option_values[chosen[0]]
     else:
         hint = t("config.field-select-hint", options=", ".join(display_options))
         while True:
@@ -311,40 +324,66 @@ def _ask_select(fd: FieldDef, prompt_text: str, default: str) -> str:
             except (EOFError, KeyboardInterrupt):
                 raise RuntimeError(t("errors.cancelled", action=t("create.action")))
 
-            value = raw if raw else default
+            raw_value = raw if raw else default
 
-            if not value and not fd.required:
+            if not raw_value:
+                if fd.required:
+                    print(f"[YAL] {t('config.field-required')}")
+                    continue
                 return ""
 
-            if value == custom_label:
+            if fd.allow_custom and raw_value == custom_label:
+                value = _CUSTOM
                 break
-            if value not in fd.options:
-                print(f"[YAL] {t('config.field-invalid-option', options=', '.join(fd.options))}")
-                continue
-            break
+            if raw_value in fd.options:
+                value = raw_value
+                break
 
-    if fd.allow_custom and value == custom_label:
+            print(f"[YAL] {t('config.field-invalid-option', options=', '.join(fd.options))}")
+
+    if value is _CUSTOM:
         return _ask_text(fd, prompt_text, "", "")
+    return str(value)
 
-    return value
 
-
-def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str) -> list[str]:
-    """Несколько вариантов из fd.options. Возвращает list[str], без дублей."""
+def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig) -> list[str]:
+    """
+    Несколько вариантов из fd.options, с опциональными описаниями
+    (messages.<id>.option.<value>) и опциональным кастомным вводом
+    (allow-custom) — кастомные пункты вводятся как в type="list" (свободный
+    список строк), а не как одно текстовое значение, как в select.
+    Возвращает list[str], без дублей.
+    """
     options = fd.options
     default_list = [v.strip() for v in default.split(",") if v.strip()] if default else []
 
     if picker.is_interactive():
+        display_options = [_option_label(fd, config, opt) for opt in options]
+        option_values: list[Any] = list(options)
+        if fd.allow_custom:
+            display_options.append(t("config.field-select-custom"))
+            option_values.append(_CUSTOM)
+
         initial_checked = {options.index(v) for v in default_list if v in options}
         chosen = picker.pick(
-            prompt_text, options, multi=True,
+            prompt_text, display_options, multi=True,
             initial_checked=initial_checked, required=fd.required,
         )
-        return [options[i] for i in chosen]
+        selected = [option_values[i] for i in chosen]
+        result = _dedupe([v for v in selected if v is not _CUSTOM])
+        if _CUSTOM in selected:
+            result = _dedupe(result + _collect_lines(t("config.field-multiselect-custom-prompt")))
 
-    # Fallback для неинтерактивного stdin (пайп/редирект/тесты/CI) —
-    # ввод через запятую.
-    hint = t("config.field-multiselect-hint", options=", ".join(options))
+        if fd.required and not result:
+            print(f"[YAL] {t('config.field-required')}")
+            return _ask_multi_select(fd, prompt_text, default, config)
+        return result
+
+    # Fallback для неинтерактивного stdin (пайп/редирект/тесты/CI) — ввод
+    # через запятую. allow-custom: значения вне options принимаются как есть.
+    hint_options = ", ".join(_option_label(fd, config, opt) for opt in options)
+    hint_key = "config.field-multiselect-hint-custom" if fd.allow_custom else "config.field-multiselect-hint"
+    hint = t(hint_key, options=hint_options)
     while True:
         display_default = f" [{', '.join(default_list)}]" if default_list else ""
         print(f"[YAL] {prompt_text}{display_default}\n      {hint}: ", end="", flush=True)
@@ -361,18 +400,45 @@ def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str) -> list[str]
                 continue
             return []
 
-        invalid = [v for v in chosen if v not in options]
-        if invalid:
-            print(f"[YAL] {t('config.field-invalid-option', options=', '.join(options))}")
-            continue
+        if not fd.allow_custom:
+            invalid = [v for v in chosen if v not in options]
+            if invalid:
+                print(f"[YAL] {t('config.field-invalid-option', options=', '.join(options))}")
+                continue
 
-        seen: set[str] = set()
-        result: list[str] = []
-        for v in chosen:
-            if v not in seen:
-                seen.add(v)
-                result.append(v)
-        return result
+        return _dedupe(chosen)
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    """Убирает дубли, сохраняя порядок первого появления."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for v in items:
+        if v not in seen:
+            seen.add(v)
+            result.append(v)
+    return result
+
+
+def _collect_lines(prompt_text: str) -> list[str]:
+    """
+    Сырой сбор строк до пустой строки — общий механизм для type="list" и для
+    кастомного хвоста allow-custom в multi-select (тот же паттерн, что уже
+    использует add._ask_excludes).
+    """
+    hint = t("config.field-list-hint")
+    print(f"[YAL] {prompt_text}\n      {hint}")
+    items: list[str] = []
+    while True:
+        print("  > ", end="", flush=True)
+        try:
+            line = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+        if not line:
+            break
+        items.append(line)
+    return items
 
 
 def _parse_number(raw: str) -> int | float | None:
@@ -433,24 +499,15 @@ def _ask_list(fd: FieldDef, prompt_text: str, default: str) -> list[str]:
     """
     Произвольный список строк — в отличие от multi-select, варианты не
     ограничены фиксированным набором. Ввод по одной строке, пустая
-    строка — конец (тот же паттерн, что уже использует add._ask_excludes).
+    строка — конец (тот же паттерн, что уже использует add._ask_excludes;
+    общий механизм — в _collect_lines, он же используется кастомным хвостом
+    allow-custom у multi-select).
     """
     default_list = [v.strip() for v in default.split(",") if v.strip()] if default else []
-    hint = t("config.field-list-hint")
 
     while True:
         display_default = f" [{', '.join(default_list)}]" if default_list else ""
-        print(f"[YAL] {prompt_text}{display_default}\n      {hint}")
-        items: list[str] = []
-        while True:
-            print("  > ", end="", flush=True)
-            try:
-                line = input().strip()
-            except (EOFError, KeyboardInterrupt):
-                raise RuntimeError(t("errors.cancelled", action=t("create.action")))
-            if not line:
-                break
-            items.append(line)
+        items = _collect_lines(f"{prompt_text}{display_default}")
 
         if not items:
             items = default_list
@@ -468,14 +525,25 @@ _TRUE_STRINGS: frozenset[str] = frozenset({"true", "1", "yes", "on"})
 
 
 def _get_msg(config: YalConfig, fid: str, key: str, fallback: str) -> str:
+    """
+    Достаёт сообщение по произвольному точечному пути key (например "prompt",
+    "placeholder", "option.en-US", "anything.nested") из messages.<field-id>
+    — сначала из текущей локали, потом из _base. Путь разбирается так же,
+    как dotted-key в TOML разворачивает его в вложенные таблицы — никакой
+    привязки к конкретным именам ключей здесь нет.
+    """
     current_lang_code = current_lang()
-
-    if (msg := config.messages.get(current_lang_code, {}).get(fid, {}).get(key)):
-        return msg
-
-    if (msg := config.messages.get("_base", {}).get(fid, {}).get(key)):
-        return msg
-
+    for lang in (current_lang_code, "_base"):
+        node: Any = config.messages.get(lang, {}).get(fid)
+        if not isinstance(node, dict):
+            continue
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                node = None
+                break
+            node = node[part]
+        if isinstance(node, str) and node:
+            return node
     return fallback
 
 
