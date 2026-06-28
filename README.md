@@ -1,6 +1,6 @@
 # [YAL](https://pypi.org/project/yal-cmd/)
 
-<img src="logo.svg" width="48" style="float: left; margin-right: 0.75em" />
+<img src="logo.svg" width="48" align="left" />
 
 **YAL** is a command-line utility for project initialization and updates based on templates from git repositories.
 
