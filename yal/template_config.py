@@ -97,6 +97,7 @@ class FieldDef:
     max: float | None = None       # только для type="number"
     pattern: str | None = None     # только для type="text" — валидируется через re.fullmatch
     allow_custom: bool = False
+    min_cols: int = 1
 
 
 @dataclass
@@ -150,6 +151,7 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
             max=fd.get("max"),
             pattern=fd.get("pattern"),
             allow_custom=fd.get("allow-custom", False),
+            min_cols=fd.get("min-cols", 1),
         ))
 
     targets = []
@@ -324,7 +326,7 @@ def _ask_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig)
 
     if picker.is_interactive():
         initial_index = fd.options.index(default) if default in fd.options else 0
-        chosen = picker.pick(prompt_text, display_options, multi=False, initial_index=initial_index)
+        chosen = picker.pick(prompt_text, display_options, multi=False, initial_index=initial_index, min_cols=fd.min_cols)
         value = option_values[chosen[0]]
     else:
         hint = t("config.field-select-hint", options=", ".join(display_options))
@@ -388,6 +390,7 @@ def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str, config: YalC
         chosen = picker.pick(
             prompt_text, pick_display, multi=True,
             initial_checked=initial_checked, required=fd.required,
+            min_cols=fd.min_cols
         )
         selected = [pick_values[i] for i in chosen]
         result = _dedupe([v for v in selected if v is not _CUSTOM])

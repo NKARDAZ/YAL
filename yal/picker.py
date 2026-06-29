@@ -128,6 +128,7 @@ def _calculate_layout(
     term_width: int,
     term_height: int,
     header_lines: int,
+    min_cols: int = 1,  # <-- НОВЫЙ ПАРАМЕТР
 ) -> tuple[int, int, int]:
     """
     Рассчитывает оптимальную раскладку для списка опций.
@@ -150,11 +151,15 @@ def _calculate_layout(
     max_cols_by_width = max(1, (term_width - 2) // max_item_width)
 
     # Если список помещается в одну колонку без прокрутки - так и оставляем
-    if len(options) <= max_rows:
+    # НО только если min_cols = 1
+    if min_cols <= 1 and len(options) <= max_rows:
         return 1, len(options), max_item_width
 
-    # Иначе пытаемся распределить по колонкам
-    for cols in range(2, max_cols_by_width + 1):
+    # Начинаем с min_cols, если он больше 1
+    start_cols = max(2, min_cols)
+
+    # Пытаемся распределить по колонкам, начиная с min_cols
+    for cols in range(start_cols, max_cols_by_width + 1):
         rows = (len(options) + cols - 1) // cols
         if rows <= max_rows:
             return cols, rows, max_item_width
@@ -278,6 +283,7 @@ def pick(
     initial_index: int = 0,
     initial_checked: set[int] | None = None,
     required: bool = False,
+    min_cols: int = 1,
 ) -> list[int]:
     """
     Запускает интерактивный picker. Возвращает список выбранных индексов
@@ -302,7 +308,7 @@ def pick(
     header_lines = 1
 
     cols, rows, max_item_width = _calculate_layout(
-        options, term_width, term_height, header_lines
+        options, term_width, term_height, header_lines, min_cols
     )
 
     start_line = 0
@@ -406,7 +412,7 @@ def pick(
                 total_visible = min(len(options), term_height - header_lines - 2)
 
                 cols, rows, max_item_width = _calculate_layout(
-                    options, term_width, term_height, header_lines
+                    options, term_width, term_height, header_lines, min_cols
                 )
 
                 if cols == 1 and len(options) > rows:
