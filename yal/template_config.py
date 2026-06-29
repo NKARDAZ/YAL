@@ -15,6 +15,7 @@ from ruamel.yaml import YAML
 import subprocess
 import shlex
 
+from yal import conditions
 from yal.version import get_version
 
 if sys.version_info >= (3, 11):
@@ -98,6 +99,7 @@ class FieldDef:
     pattern: str | None = None     # только для type="text" — валидируется через re.fullmatch
     allow_custom: bool = False
     min_cols: int = 1
+    show_if: str | None = None
 
 
 @dataclass
@@ -152,6 +154,7 @@ def _parse(raw: dict[str, Any]) -> YalConfig:
             pattern=fd.get("pattern"),
             allow_custom=fd.get("allow-custom", False),
             min_cols=fd.get("min-cols", 1),
+            show_if=fd.get("show-if"),
         ))
 
     targets = []
@@ -220,6 +223,21 @@ def run_post_commands(commands: list[str], dest_dir: Path) -> None:
 def collect(config: YalConfig) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for fd in config.fields:
+        # Проверяем show-if
+        if hasattr(fd, 'show_if') and fd.show_if:
+            try:
+                show = conditions.evaluate(fd.show_if, values)
+                if not show:
+                    # Поле скрыто — используем default
+                    default = fd.default
+                    if default == "{placeholder}":
+                        default = ""
+                    values[fd.id] = default
+                    continue
+            except Exception:
+                # При любой ошибке показываем поле (graceful degradation)
+                pass
+
         prompt = _get_msg(config, fd.id, "prompt", fd.id)
         placeholder = _get_msg(config, fd.id, "placeholder", "")
         default = placeholder if fd.default == "{placeholder}" else fd.default
@@ -274,13 +292,11 @@ def _ask_text(fd: FieldDef, prompt_text: str, placeholder: str, default: str) ->
 
 
 def _ask_boolean(fd: FieldDef, prompt_text: str, default: str) -> bool:
-    """
-    Да/нет в духе остальных confirm-диалогов приложения (yes_variants()).
-    required для boolean смысла не имеет — False сам по себе валидный ответ,
-    "пустого" значения для bool не существует.
-    """
     default_value = default.strip().lower() in _TRUE_STRINGS if default else False
-    hint = " [Y/n]" if default_value else " [y/N]"
+    if default_value:
+        hint = t("common.confirm-prompt-true", default=" [Y/n]")
+    else:
+        hint = t("common.confirm-prompt-false", default=" [y/N]")
     print(f"[YAL] {prompt_text}{hint}: ", end="", flush=True)
     try:
         raw = input().strip().lower()

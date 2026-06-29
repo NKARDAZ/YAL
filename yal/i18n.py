@@ -96,5 +96,5 @@ def current_lang() -> str:
 
 def yes_variants() -> list[str]:
     _ensure_loaded()
-    v = _data.get("common", {}).get("yes-variants", ["y", "yes"])
+    v = _data.get("common", {}).get("yes-variants", ["y", "yes", "j", "ja", "д", "да", "d", "da", "はい", "是", "是的"])
     return [s.lower() for s in v]

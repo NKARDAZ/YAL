@@ -1,6 +1,6 @@
 [common]
-yes-variants     = ["y", "yes", "д", "да"]
-confirm-prompt   = " [y/N] "
+confirm-prompt-false	= " [д/Н]"
+confirm-prompt-true		= " [Д/н]"
 
 [errors]
 unknown-kind     = "Неизвестный тип: '{kind}'. Доступные: {available}"
