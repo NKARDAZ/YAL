@@ -22,7 +22,8 @@ from yal import store, template_config, user_store
 from yal.i18n import t
 from yal.templates.handler_def import get_handler, known_kinds
 from yal.templates.registry import TemplateEntry, get_entry
-from yal.yal_toml_writer import fill_yal_toml_origin
+from yal.yal_project_writer import fill_yal_project_origin
+from yal.answers_writer import write_answers
 
 
 def run(args: argparse.Namespace) -> None:
@@ -58,7 +59,6 @@ def run(args: argparse.Namespace) -> None:
 
     try:
         # 4. Копируем шаблон в dest, передавая уже определённую версию
-        #    чтобы handler.create не вызывал _resolve_version повторно
         result = handler.create(
             entry=entry,
             name=name,
@@ -70,7 +70,11 @@ def run(args: argparse.Namespace) -> None:
 
         if config is not None:
             template_config.apply(config, values, result.dest)
-            fill_yal_toml_origin(result.dest, template=kind, template_version=result.version)
+            fill_yal_project_origin(result.dest, template=kind, template_version=result.version)
+
+            # 👇 СОХРАНЯЕМ ОТВЕТЫ
+            write_answers(result.dest, values)
+
             if config.post_commands:
                 template_config.run_post_commands(config.post_commands, result.dest)
         else:

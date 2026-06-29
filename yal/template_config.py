@@ -1,5 +1,5 @@
 """
-Обработка yal.template.toml — конфигурационного файла шаблона.
+Обработка .yal/template.toml — конфигурационного файла шаблона.
 """
 
 from __future__ import annotations
@@ -14,9 +14,12 @@ from typing import Any
 from ruamel.yaml import YAML
 import subprocess
 import shlex
+from ruamel.yaml import YAML
 
 from yal import conditions
 from yal.version import get_version
+from yal.i18n import t, current_lang, yes_variants
+from yal import generators, picker
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -26,10 +29,6 @@ else:
     except ImportError:
         import tomli as tomllib  # type: ignore[no-redef]
 
-
-from yal.i18n import t, current_lang, yes_variants
-from yal import generators, picker
-
 _tomli_w = None
 try:
     import tomli_w as _tomli_w
@@ -38,7 +37,7 @@ except ImportError:
     _tomli_w = None
     _TOMLI_W_AVAILABLE = False
 
-YAL_TOML = "yal.template.toml"
+YAL_YML = ".yal/template.yml"
 
 # ─── защита \uXXXX при round-trip чтении/записи YAML ─────────────────────────
 # ruamel.yaml раскрывает \uXXXX → символ ещё на этапе load().
@@ -130,11 +129,11 @@ class YalConfig:
 # ─── загрузка ─────────────────────────────────────────────────────────────────
 
 def load(template_dir: Path) -> YalConfig | None:
-    path = template_dir / YAL_TOML
+    path = template_dir / YAL_YML
     if not path.exists():
         return None
-    with open(path, "rb") as f:
-        raw = tomllib.load(f)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml_parser.load(f)
     return _parse(raw)
 
 

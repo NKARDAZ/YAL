@@ -5,22 +5,18 @@ import sys
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Any
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[no-redef]
-    except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]
+from ruamel.yaml import YAML
 
 from yal.i18n import t
 
-YAL_PROJECT_TOML = "yal.toml"
+YAL_PROJECT_YML = ".yal/project.yml"
 
-# Встроенные команды — их нельзя перекрыть из yal.toml
 BUILTIN_COMMANDS: frozenset[str] = frozenset({"new", "update", "add", "remove"})
 
+yaml = YAML()
+yaml.preserve_quotes = True
+yaml.indent(mapping=2, sequence=4, offset=2)
+yaml.allow_unicode = True
 
 # ─── модели ───────────────────────────────────────────────────────────────────
 
@@ -70,16 +66,22 @@ class ProjectConfig:
         return None
 
 
-# ─── поиск yal.toml ───────────────────────────────────────────────────────────
+# ─── поиск .yal/project.toml ───────────────────────────────────────────────────────────
 
-def find_project_toml(start: Path | None = None) -> Path | None:
-    """Ищет yal.toml в текущей директории. Возвращает Path или None."""
+def find_project_yaml(start: Path | None = None) -> Path | None:
+    """Ищет .yal/project.yml в текущей директории. Возвращает Path или None."""
     base = (start or Path.cwd()).resolve()
-    candidate = base / YAL_PROJECT_TOML
+    candidate = base / YAL_PROJECT_YML
     return candidate if candidate.exists() else None
 
 
 def project_root(toml_path: Path) -> Path:
+    """
+    Возвращает корневую директорию проекта.
+    Если project.toml лежит в папке .yal, корень - это родительская папка.
+    """
+    if toml_path.parent.name == ".yal":
+        return toml_path.parent.parent
     return toml_path.parent
 
 
@@ -88,8 +90,8 @@ def project_root(toml_path: Path) -> Path:
 def load(toml_path: Path) -> ProjectConfig | None:
     if not toml_path.exists():
         return None
-    with open(toml_path, "rb") as f:
-        raw = tomllib.load(f)
+    with open(toml_path, "r", encoding="utf-8") as f:
+        raw = yaml.load(f)
     return _parse(raw)
 
 

@@ -44,8 +44,6 @@ class GenericHandler:
         resolved_version: str | None = None,
         force_commit: bool = False,
     ) -> CreateResult:
-        # Если версия уже определена снаружи (из new.py) — используем её,
-        # иначе определяем здесь (обратная совместимость).
         version = resolved_version if resolved_version is not None else self._resolve_version(entry, name, ref, force_commit)
         src = self._template_dir(entry, name, version)
 
@@ -56,21 +54,36 @@ class GenericHandler:
         from yal import template_config
         config = template_config.load(src)
 
-        combined_exclude = list(entry.exclude)
+        combined_exclude = set(entry.exclude)
         if config and config.exclude:
-            for item in config.exclude:
-                if item not in combined_exclude:
-                    combined_exclude.append(item)
+            combined_exclude.update(config.exclude)
+
+        combined_exclude.add("yal-meta.json")
 
         if dest.exists():
             shutil.rmtree(dest)
 
+        # Копируем всё
         shutil.copytree(
             src,
             dest,
-            ignore=shutil.ignore_patterns("yal-meta.json", "yal.template.toml", *combined_exclude),
+            ignore=shutil.ignore_patterns(*combined_exclude),
         )
+
+        template_yaml = dest / ".yal" / "template.yml"
+        if template_yaml.exists():
+            template_yaml.unlink()
+            print(f"[YAL] Удалён {template_yaml}")
+
+        yal_dir = dest / ".yal"
+        if yal_dir.exists() and yal_dir.is_dir():
+            contents = list(yal_dir.iterdir())
+            if not contents:
+                shutil.rmtree(yal_dir)
+                print(f"[YAL] Удалена пустая папка {yal_dir}")
+
         return CreateResult(dest=dest, version=version)
+
 
     def _resolve_version(
         self,

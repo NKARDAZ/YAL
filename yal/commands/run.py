@@ -1,7 +1,7 @@
 """
 Команда: yal <custom-name> [--arg=value ...]
 
-Выполняет команды, описанные в yal.toml текущего проекта.
+Выполняет команды, описанные в .yal/project.toml текущего проекта.
 Встроенные команды (new, update) всегда имеют приоритет — этот
 модуль вызывается только если команда не опознана как встроенная.
 
@@ -30,7 +30,7 @@ from yal.project_config import (
     ArgumentError,
     CommandDef,
     ProjectConfig,
-    find_project_toml,
+    find_project_yaml,
     inline_extra_args,
     load,
     parse_user_args,
@@ -47,7 +47,7 @@ _MAX_MACRO_DEPTH = 10
 # ─── точка входа из cli.py ────────────────────────────────────────────────────
 
 def run_from_argv(argv: list[str]) -> None:
-    toml_path = find_project_toml()
+    toml_path = find_project_yaml()
     config = None
     root = None
     messages = []

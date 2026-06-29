@@ -36,13 +36,13 @@ from yal.templates.registry import TemplateEntry
 YAL_HOME = Path.home() / ".yal"
 USER_REGISTRY_PATH = YAL_HOME / "user-templates.toml"
 
-# yal.template.toml всегда исключается глобально — нет смысла явно указывать
-_GLOBAL_EXCLUDE = {"yal.template.toml"}
+# .yal/template.toml всегда исключается глобально — нет смысла явно указывать
+_GLOBAL_EXCLUDE = {".yal/template.yml"}
 
 
 def load_registry() -> dict[str, dict[str, TemplateEntry]]:
     """
-    Читает ~/.yal/user-templates.toml и возвращает структуру вида:
+    Читает ~/.yal/user-templates.yml и возвращает структуру вида:
         { kind: { name: TemplateEntry(is_user=True) } }
     """
     if not USER_REGISTRY_PATH.exists():
@@ -101,7 +101,7 @@ def get_entry(kind: str, name: str) -> TemplateEntry | None:
 def add_entry(kind: str, name: str, repo: str, exclude: list[str]) -> None:
     """
     Добавляет или обновляет запись в ~/.yal/user-templates.toml.
-    yal.template.toml в exclude не записывается (он глобальный).
+    .yal/template.toml в exclude не записывается (он глобальный).
     """
     YAL_HOME.mkdir(parents=True, exist_ok=True)
 
@@ -173,11 +173,24 @@ def list_names(kind: str) -> list[str]:
 # ─── вспомогательные ──────────────────────────────────────────────────────────
 
 def _merge_exclude(raw_exclude: list[str]) -> list[str]:
-    """Объединяет явные исключения с глобальными, убирает дубли."""
-    result = list(_GLOBAL_EXCLUDE)
+    """Объединяет явные исключения с глобальными, убирает дубли и нормализует пути."""
+    result: list[str] = []
+    seen = set()
+
+    # Добавляем глобальные исключения
+    for item in _GLOBAL_EXCLUDE:
+        normalized = item.strip("/\\")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+
+    # Добавляем пользовательские исключения
     for item in raw_exclude:
-        if item not in _GLOBAL_EXCLUDE:
-            result.append(item)
+        normalized = item.strip("/\\")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+
     return result
 
 

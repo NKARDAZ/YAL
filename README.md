@@ -6,8 +6,74 @@
 on templates from git repositories.
 
 It also supports project-local commands (similar to Makefile targets or scripts
-in package.json). Define them in `yal.toml` and invoke them with
+in package.json). Define them in `.yal/project.yml` and invoke them with
 `yal <command>`.
+
+---
+
+## Installation
+
+```bash
+pip install yal-cmd
+```
+
+> **Requires Python >= 3.10**
+
+> **Dependencies:**
+>
+> - [requests](https://pypi.org/project/requests) >=2.34.2
+> - [ruamel.yaml](https://pypi.org/project/ruamel.yaml) >=0.19.1
+> - [tomli-w](https://pypi.org/project/tomli-w/) >=1.2.0
+> - [tomli](https://pypi.org/project/tomli-w/) when python < 3.11
+
+---
+
+## Quick Start
+
+```bash
+# Create a project from the built-in book template
+yal new book
+```
+
+YAL downloads the template (once — it’s cached afterward), then walks you
+through a few interactive prompts (defined by the template’s
+`.yal/template.yml`): project name, author, license, and so on. Answer them, and
+a new folder appears — named after your project, or `book-<version>` if the
+template doesn’t define a custom name.
+
+```bash
+cd book-1.7.1   # or whatever you named it
+```
+
+That’s the whole loop. The new folder contains a `.yal/project.yml` recording
+which template and version it came from.
+
+### Don’t have a template? Use any repo as one
+
+You don’t need a `.yal/template.yml` to get started — any git repository works,
+even an empty one:
+
+```bash
+yal add demo:my-app from <user>/my-repo
+yal new demo:my-app
+```
+
+Without a `.yal/template.yml`, YAL just copies the repo as-is and creates a
+default `.yal/project.yml` for you. Add field prompts and file templating later,
+once you actually need them — see [.yal/template.yml](#yaltemplateyml) below.
+
+### Running project commands
+
+If the resulting `.yal/project.yml` has `[[command]]` entries (your own, or ones
+shipped by the template), run them the same way you ran `yal new`:
+
+```bash
+yal <command-name>
+```
+
+See [.yal/project.yml](#yalyml) for how to define them.
+
+---
 
 ## Commands
 
@@ -33,7 +99,7 @@ Downloads the template (if not cached locally) and initiates the configuration
 process.
 
 ```bash
-# Basic usage — uses the "default" template, latest version
+# Basic usage — uses the “default” template, latest version
 yal new book
 
 # Specify a template by name
@@ -141,7 +207,7 @@ Removes cached template files from local storage. When all versions of a
 user-registered template are removed, its registry entry is also deleted.
 
 ```bash
-# Remove all cached versions of all "book" templates
+# Remove all cached versions of all “book” templates
 yal remove book
 
 # Remove all cached versions of a specific template
@@ -155,62 +221,61 @@ yal remove book:my-theme@c651f7d
 
 ---
 
-## yal.toml
+## .yal/project.yml
 
 A configuration file placed in the root of the created project. It stores
 metadata about the template used and lets you define local commands for the
 project.
 
-```toml
-[origin]
-template         = "book"
-template-version = "9670322"          # commit hash, or a release tag like "1.7.1"
-created-at       = "2026-05-31T03:16:33Z"
-yal-version      = "0.1.1"
+```yaml
+origin:
+  template: book
+  template-version: '9670322' # commit hash, or a release tag like "1.7.1"
+  created-at: '2026-05-31T03:16:33Z'
+  yal-version: '0.1.1'
 
-[[command]]
-name      = "make"
-script    = "/build/build.py"         # leading "/" = project root, not filesystem root
-exec      = "python3"
-arguments = { --mode = [] }           # [] means any value is accepted
-# yal make              → python3 build/build.py
-# yal make --mode=print → python3 build/build.py --mode=print
+command:
+  - name: make
+    script: /build/build.py # leading "/" = project root, not filesystem root
+    exec: python3
+    arguments: # {} means any value is accepted
+      --mode: []
+    # yal make              → python3 build/build.py
+    # yal make --mode=print → python3 build/build.py --mode=print
 
-[[command]]
-name   = "make print"
-macros = "make --mode=print"
-# yal make print → expands to → yal make --mode=print
+  - name: make print
+    macros: make --mode=print
+    # yal make print → expands to → yal make --mode=print
 ```
 
 ### Inline scripts
 
-`script` doesn't have to be a path — it can contain the code itself as a
-multi-line string. In that case `exec` is required (there's no file extension to
+`script` doesn’t have to be a path — it can contain the code itself as a
+multi-line string. In that case `exec` is required (there’s no file extension to
 infer the interpreter from), and the code is passed directly to the interpreter
 via its own "run code" flag (`-c`/`-e`/`-r`) — nothing is written to disk.
 
-```toml
-[[command]]
-name = "hello"
-exec = "python3"
-script = """
-def greet():
-    print("Hello from an inline script!")
+```yaml
+command:
+  - name: hello
+    exec: python3
+    script: |
+      def greet():
+          print("Hello from an inline script!")
 
-greet()
-"""
+      greet()
 ```
 
 Supported `exec` values for inline scripts: `python3`/`python`,
 `node`/`ts-node`, `ruby`, `perl`, `php`, `bash`/`zsh`/`fish`/`sh`, `os-bash`,
 `lua`. Arguments (`arguments = {...}`) work the same as with file scripts — with
-one exception: `lua` doesn't support passing extra arguments to inline code (its
+one exception: `lua` doesn’t support passing extra arguments to inline code (its
 CLI always treats the first extra argument as a script file to run), so
-`yal.toml` rejects arguments on `lua` inline scripts rather than silently
-dropping them.
+`.yal/project.yml` rejects arguments on `lua` inline scripts rather than
+silently dropping them.
 
-If `yal.toml` is not present in the template, it will be created automatically
-with a default `[origin]` section filled in on project creation.
+If `.yal/project.yml` is not present in the template, it will be created
+automatically with a default `[origin]` section filled in on project creation.
 
 ### Commands
 
@@ -235,44 +300,47 @@ yal make --mode print
 
 ---
 
-## yal.template.toml
+## .yal/template.yml
 
 A configuration file placed in the root of a template repository. When present,
 YAL uses it to interactively prompt the user for values during `yal new`, then
 applies them to target files in the new project.
 
-```toml
-[meta]
-yal-min-version = "0.1.1"
-post-commands   = ["npm install"]    # run after project is created
-exclude         = ["examples/"]      # paths not copied into the project
+```yaml
+meta:
+  yal-min-version: '0.1.1'
+  post-commands: ['npm install'] # run after project is created
+  exclude: ['examples/'] # paths not copied into the project
 
-[[fields]]
-id             = "project-name"
-type           = "text"
-required       = true
-is-folder-name = true                # this value becomes the output folder name
+fields:
+  - id: project-name
+    type: text
+    required: true
+    is-folder-name: true # this value becomes the output folder name
 
-[[fields]]
-id      = "author"
-type    = "text"
-default = "Anonymous"
+  - id: author
+    type: text
+    default: Anonymous
 
-[[fields]]
-id      = "license"
-type    = "select"
-options = ["MIT", "Apache-2.0", "GPL-3.0"]
-default = "MIT"
+  - id: license
+    type: select
+    options: ['MIT', 'Apache-2.0', 'GPL-3.0']
+    default: MIT
 
-[messages]
-project-name.prompt      = "Project name"
-author.prompt            = "Author name"
-author.placeholder       = "Your Name"
-license.prompt           = "License"
+messages:
+  project-name:
+    prompt: Project name
+  author:
+    prompt: Author name
+    placeholder: Your Name
+  license:
+    prompt: License
 
-[messages.ru]
-project-name.prompt = "Название проекта"
-author.prompt       = "Имя автора"
+  ru:
+    project-name:
+      prompt: Название проекта
+    author:
+      prompt: Имя автора
 ```
 
 ### Fields
@@ -280,64 +348,77 @@ author.prompt       = "Имя автора"
 Each `[[fields]]` entry supports:
 
 | Field            | Description                                                                                                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
 | `id`             | Unique identifier, used as key in mappings and message lookups                                                                                                                               |
-| `type`           | Input type: `text`, `number`, `list`, `select`, `multi-select`, or `boolean` (see Field types below)                                                                                                           |
+| `type`           | Input type: `text`, `number`, `list`, `select`, `multi-select`, or `boolean` (see Field types below)                                                                                         |
 | `required`       | If `true`, the user must provide a non-empty value (for `multi-select`, at least one item)                                                                                                   |
 | `default`        | Default value used if the user presses Enter without typing. Use `"{placeholder}"` to mirror the placeholder. For `boolean`/`multi-select`, a native TOML `true`/`false` or array also works |
 | `options`        | The list of choices — required for `select` and `multi-select`                                                                                                                               |
-| `is-folder-name` | If `true`, the field's value becomes the name of the created project folder (only meaningful for `text`)                                                                                     |
+| `is-folder-name` | If `true`, the field’s value becomes the name of the created project folder (only meaningful for `text`)                                                                                     |
 | `min`            | Minimum value for `number` fields (inclusive)                                                                                                                                                |
 | `max`            | Maximum value for `number` fields (inclusive)                                                                                                                                                |
 | `pattern`        | Regular expression for `text` field validation (Python regex syntax, uses `re.fullmatch`)                                                                                                    |
 | `allow-custom`   | If `true`, allows entering custom values in `select` and `multi-select` fields                                                                                                               |
 | `min-cols`       | Minimum number of columns in interactive picker (default: 1). Only effective when terminal is wide enough                                                                                    |
-| `show-if`        | Conditional expression to show/hide the field based on other fields (see Conditional fields below)                                                                                           |                                                                                |
+| `show-if`        | Conditional expression to show/hide the field based on other fields (see Conditional fields below)                                                                                           |     |
 
 ### Field types
 
-**`text`** — free-form input. `options`, if given, is just a hint and isn't enforced.
+**`text`** — free-form input. `options`, if given, is just a hint and isn’t
+enforced.
 
 **`number`** — an integer or float.
 
 **`list`** — one or more values, separated by commas.
 
-**`select`** — exactly one value from `options`. In an interactive terminal this renders as an arrow-key picker (`↑`/`↓` to move, `Enter` to confirm); when stdin isn't a real terminal (pipes, CI), it falls back to typed input validated against `options`.
+**`select`** — exactly one value from `options`. In an interactive terminal this
+renders as an arrow-key picker (`↑`/`↓` to move, `Enter` to confirm); when stdin
+isn’t a real terminal (pipes, CI), it falls back to typed input validated
+against `options`.
 
-```toml
-[[fields]]
-id      = "license"
-type    = "select"
-options = ["MIT", "Apache-2.0", "GPL-3.0"]
-default = "MIT"
+```yaml
+fields:
+  - id: license
+    type: select
+    options: ['MIT', 'Apache-2.0', 'GPL-3.0']
+    default: MIT
 ```
 
-**`multi-select`** — zero or more values from `options`, picked with `Space` to toggle and `Enter` to confirm (or comma-separated typed input as a fallback). The collected value is a list and is written natively to YAML/JSON/TOML targets; for `.env` targets it's joined with commas.
+**`multi-select`** — zero or more values from `options`, picked with `Space` to
+toggle and `Enter` to confirm (or comma-separated typed input as a fallback).
+The collected value is a list and is written natively to YAML/JSON/TOML targets;
+for `.env` targets it’s joined with commas.
 
-```toml
-[[fields]]
-id      = "features"
-type    = "multi-select"
-options = ["auth", "billing", "search"]
-default = ["auth", "search"]   # or default = "auth,search"
+```yaml
+fields:
+  - id: features
+    type: multi-select
+    options: ['auth', 'billing', 'search']
+    default: ['auth', 'search'] # or default: "auth,search"
 ```
 
-**`boolean`** — a yes/no prompt (`[y/N]`/`[Y/n]` depending on `default`). Written as a native `true`/`false` to YAML/JSON/TOML, and as the string `"true"`/`"false"` to `.env`.
+**`boolean`** — a yes/no prompt (`[y/N]`/`[Y/n]` depending on `default`).
+Written as a native `true`/`false` to YAML/JSON/TOML, and as the string
+`"true"`/`"false"` to `.env`.
 
-```toml
-[[fields]]
-id      = "use-ci"
-type    = "boolean"
-default = true
+```yaml
+fields:
+  - id: use-ci
+    type: boolean
+    default: true
 ```
 
-An unknown `type`, or a `select`/`multi-select` without `options`, falls back to plain text input with a warning — it won't crash project creation.
+An unknown `type`, or a `select`/`multi-select` without `options`, falls back to
+plain text input with a warning — it won’t crash project creation.
 
 ### Conditional fields
 
-The `show-if` attribute lets you conditionally show or hide fields based on values of previously answered fields. It uses a simple expression language with logical operators.
+The `show-if` attribute lets you conditionally show or hide fields based on
+values of previously answered fields. It uses a simple expression language with
+logical operators.
 
 **Supported operators:**
+
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
 - Membership: `in`, `not in`
 - Logical: `and`, `or`, `not`
@@ -346,32 +427,29 @@ The `show-if` attribute lets you conditionally show or hide fields based on valu
 
 **Examples:**
 
-```toml
-[[fields]]
-id      = "use-ci"
-type    = "boolean"
-default = false
+```yaml
+fields:
+  - id: use-ci
+    type: boolean
+    default: false
 
-[[fields]]
-id      = "ci-provider"
-type    = "select"
-options = ["github-actions", "gitlab-ci", "circle-ci"]
-show-if = "use-ci"
-# Only shown if use-ci is true
+  - id: ci-provider
+    type: select
+    options: ['github-actions', 'gitlab-ci', 'circle-ci']
+    show-if: use-ci
+    # Only shown if use-ci is true
 
-[[fields]]
-id      = "enterprise-plan"
-type    = "select"
-options = ["basic", "pro", "enterprise"]
-show-if = "features in ['enterprise']"
-# Only shown if 'enterprise' is selected in the 'features' multi-select field
+  - id: enterprise-plan
+    type: select
+    options: ['basic', 'pro', 'enterprise']
+    show-if: features in ['enterprise']
+    # Only shown if 'enterprise' is selected in the 'features' multi-select field
 
-[[fields]]
-id      = "deployment-type"
-type    = "select"
-options = ["dev", "staging", "production"]
-show-if = "ci-provider == 'github-actions' and use-ci"
-# Only shown for GitHub Actions CI
+  - id: deployment-type
+    type: select
+    options: ['dev', 'staging', 'production']
+    show-if: ci-provider == 'github-actions' and use-ci
+    # Only shown for GitHub Actions CI
 ```
 
 ### Targets
@@ -379,61 +457,60 @@ show-if = "ci-provider == 'github-actions' and use-ci"
 After collecting field values, YAL writes them into files specified under
 `[[targets]]`. Supported formats: `yaml`, `json`, `toml`, `env`.
 
-```toml
-[[targets]]
-file   = "/config/meta.yaml"
-format = "yaml"
+```yaml
+targets:
+  - file: /config/meta.yaml
+    format: yaml
+    fields:
+      - key: project.name # dot-separated path
+        field: project-name # use value from fields id="project-name"
 
-  [[targets.fields]]
-  key   = "project.name"          # dot-separated path
-  field = "project-name"          # use value from [[fields]] id="project-name"
+      - key: project.created
+        value: ${DATE} # built-in generator
 
-  [[targets.fields]]
-  key   = "project.created"
-  value = "${DATE}"               # built-in generator
+      - key: project.uuid
+        value: ${UUID}
 
-  [[targets.fields]]
-  key   = "project.uuid"
-  value = "${UUID}"
+      - key: meta.copyright
+        value: '© {author}, ${YEAR}' # interpolation + generator
 
-  [[targets.fields]]
-  key   = "meta.copyright"
-  value = "© {author}, ${YEAR}"  # interpolation + generator
-
-  [[targets.fields]]
-  key   = "app.port"
-  value = "${NULL}"              # sets YAML key to ~ (null), JSON to null
+      - key: app.port
+        value: ${NULL} # sets YAML key to ~ (null), JSON to null
 ```
 
 **Path syntax for nested keys:**
+
 - project.name → sets project.name in the target file
-- app[0].url → sets the first element's url field
+- app[0].url → sets the first element’s url field
 - database[0] → sets the first element of the array
 
 **Field mapping options:**
+
 - field — use value from a [[fields]] entry by its id
-- value — use a literal value or generator expression (e.g., "${DATE}", "© {author}")
-- fallback — fallback value if the primary field or value resolves to empty ("", [], or None)
+- value — use a literal value or generator expression (e.g., "${DATE}", "©
+  {author}")
+- fallback — fallback value if the primary field or value resolves to empty ("",
+  [], or None)
 
 ### .env file support
 
 Target format env handles .env files:
 
-```toml
-[[targets]]
-file   = "/.env"
-format = "env"
+```yaml
+targets:
+  - file: /.env
+    format: env
+    fields:
+      - key: APP_NAME
+        field: project-name
 
-  [[targets.fields]]
-  key   = "APP_NAME"
-  field = "project-name"
-
-  [[targets.fields]]
-  key   = "APP_PORT"
-  field = "port"
+      - key: APP_PORT
+        field: port
 ```
 
-YAL preserves comments and empty lines, updates existing variables in place, and adds new ones at the end. Values with spaces or special characters are automatically quoted.
+YAL preserves comments and empty lines, updates existing variables in place, and
+adds new ones at the end. Values with spaces or special characters are
+automatically quoted.
 
 ### Built-in generators
 
@@ -453,29 +530,39 @@ with generators: `"© {author}, ${YEAR}"`.
 
 ### Option localization and labels
 
-For `select` and `multi-select` fields, you can localize option display names and add descriptions:
+For `select` and `multi-select` fields, you can localize option display names
+and add descriptions:
 
-```toml
-[messages]
-genre.prompt = "Select book genre"
-# genre.option."Fantasy"
-genre.option.label."Fantasy" = "Magic, mythical creatures, imaginary worlds"
-genre.option."Sci-Fi" = "Science Fiction"
-genre.option.label."Sci-Fi" = "Future, technology, space exploration"
-# genre.option."Mystery"
-genre.option.label."Mystery" = "Crime, detective work, suspense"
+```yaml
+messages:
+  genre:
+    prompt: Select book genre
+    option:
+      Fantasy: Fantasy
+      Sci-Fi: Science Fiction
+      Mystery: Mystery
 
-[messages.ru]
-genre.prompt = "Выберите жанр книги"
-genre.option."Fantasy" = "Фэнтези"
-genre.option.label."Fantasy" = "Магия, мифические существа, вымышленные миры"
-genre.option."Sci-Fi" = "Научная фантастика"
-genre.option.label."Sci-Fi" = "Будущее, технологии, космические путешествия"
-genre.option."Mystery" = "Детектив"
-genre.option.label."Mystery" = "Преступления, расследования, саспенс"
+      label:
+        Fantasy: Magic, mythical creatures, imaginary worlds
+        Sci-Fi: Future, technology, space exploration
+        Mystery: Crime, detective work, suspense
+
+  ru:
+    genre:
+      prompt: Выберите жанр книги
+      option:
+        Fantasy: Фэнтези
+        Sci-Fi: Научная фантастика
+        Mystery: Детектив
+
+        label:
+          Fantasy: Магия, мифические существа, вымышленные миры
+          Sci-Fi: Будущее, технологии, космические путешествия
+          Mystery: Преступления, расследования, саспенс
 ```
 
-When displayed in the picker, options show both the display name and description:
+When displayed in the picker, options show both the display name and
+description:
 
 ```
 Fantasy — Magic, mythical creatures, imaginary worlds
@@ -483,7 +570,8 @@ Science Fiction — Future, technology, space exploration
 Mystery — Crime, detective work, suspense
 ```
 
-The stored value remains the original option key (`"Fantasy"`, `"Sci-Fi"`, `"Mystery"`), not the display name.
+The stored value remains the original option key (`"Fantasy"`, `"Sci-Fi"`,
+`"Mystery"`), not the display name.
 
 ### Localization
 
@@ -525,8 +613,8 @@ pip install pyyaml pikepdf pillow
 ## Custom templates
 
 Any public repository can be registered as a template. The repository does not
-need to contain a `yal.template.toml` — YAL will copy it as-is and create a
-default `yal.toml` in the resulting project.
+need to contain a `.yal/template.yml` — YAL will copy it as-is and create a
+default `.yal/project.yml` in the resulting project.
 
 ```bash
 # Register under a new kind "vue", name "default"
@@ -546,138 +634,160 @@ yal new vue:tailwind
 yal new vue:minimal
 ```
 
-### Full example with yal.template.toml
+### Full example with .yal/template.yml
 
-```toml
-[meta]
-yal-min-version = "0.1.3"
-post-commands   = ["git init", "pip install -r requirements.txt"]
+```yaml
+meta:
+  yal-min-version: '0.1.3'
+  post-commands:
+    - git init
+    - pip install -r requirements.txt
 
-[[fields]]
-id             = "book-title"
-type           = "text"
-required       = true
-is-folder-name = true
+fields:
+  - id: book-title
+    type: text
+    required: true
+    is-folder-name: true
 
-[[fields]]
-id      = "author"
-type    = "text"
-default = "{placeholder}"
+  - id: author
+    type: text
+    default: '{placeholder}'
 
-[[fields]]
-id      = "genre"
-type    = "select"
-options = ["fantasy", "scifi", "mystery", "romance"]
-default = "fantasy"
+  - id: genre
+    type: select
+    options:
+      - fantasy
+      - scifi
+      - mystery
+      - romance
+    default: fantasy
 
-[[fields]]
-id      = "features"
-type    = "multi-select"
-options = ["glossary", "illustrations", "index", "bibliography"]
-default = ["glossary", "bibliography"]
+  - id: features
+    type: multi-select
+    options:
+      - glossary
+      - illustrations
+      - index
+      - bibliography
+    default:
+      - glossary
+      - bibliography
 
-[[fields]]
-id      = "use-typst"
-type    = "boolean"
-default = true
+  - id: use-typst
+    type: boolean
+    default: true
 
-[[fields]]
-id      = "output-format"
-type    = "select"
-options = ["pdf", "html", "epub"]
-show-if = "use-typst"
-default = "pdf"
+  - id: output-format
+    type: select
+    options: ['pdf', 'html', 'epub']
+    show-if: use-typst
+    default: pdf
 
-[[targets]]
-file   = "/book.yaml"
-format = "yaml"
+targets:
+  - file: /book.yaml
+    format: yaml
+    fields:
+      - key: book.title
+        field: book-title
 
-  [[targets.fields]]
-  key   = "book.title"
-  field = "book-title"
+      - key: book.author
+        field: author
 
-  [[targets.fields]]
-  key   = "book.author"
-  field = "author"
+      - key: book.genre
+        field: genre
 
-  [[targets.fields]]
-  key   = "book.genre"
-  field = "genre"
+      - key: book.features
+        field: features
 
-  [[targets.fields]]
-  key   = "book.features"
-  field = "features"
+      - key: book.created
+        value: ${DATE}
 
-  [[targets.fields]]
-  key   = "book.created"
-  value = "${DATE}"
+  - file: /.env
+    format: env
+    fields:
+      - key: BOOK_TITLE
+        field: book-title
 
-[[targets]]
-file   = "/.env"
-format = "env"
+      - key: BOOK_AUTHOR
+        field: author
 
-  [[targets.fields]]
-  key   = "BOOK_TITLE"
-  field = "book-title"
+      - key: OUTPUT_FORMAT
+        field: output-format
+        fallback: pdf
 
-  [[targets.fields]]
-  key   = "BOOK_AUTHOR"
-  field = "author"
+messages:
+  book-title:
+    prompt: Book title
+  author:
+    prompt: Author
+    placeholder: Your Name
+  genre:
+    prompt: Select genre
+    option:
+      fantasy: Fantasy
+      scifi: Science Fiction
+      mystery: Mystery
+      romance: Romance
 
-  [[targets.fields]]
-  key   = "OUTPUT_FORMAT"
-  field = "output-format"
-  fallback = "pdf"
+      label:
+        fantasy: Magic, mythical creatures, imaginary worlds
+        scifi: Future, technology, space exploration
+        mystery: Crime, detective work, suspense
+        romance: Love stories, relationships, emotions
+  features:
+    prompt: Select book features
+    option:
+      glossary: Glossary
+      illustrations: Illustrations
+      index: Index
+      bibliography: Bibliography
 
-[messages]
-book-title.prompt         = "Book title"
-author.prompt             = "Author"
-author.placeholder        = "Your Name"
-genre.prompt              = "Select genre"
-genre.option.fantasy      = "Fantasy"
-genre.option.label.fantasy = "Magic, mythical creatures, imaginary worlds"
-genre.option.scifi        = "Science Fiction"
-genre.option.label.scifi  = "Future, technology, space exploration"
-genre.option.mystery      = "Mystery"
-genre.option.label.mystery = "Crime, detective work, suspense"
-genre.option.romance      = "Romance"
-genre.option.label.romance = "Love stories, relationships, emotions"
-features.prompt           = "Select book features"
-features.option.glossary  = "Glossary"
-features.option.label.glossary = "Terms and definitions"
-features.option.illustrations = "Illustrations"
-features.option.label.illustrations = "Images and diagrams"
-features.option.index     = "Index"
-features.option.label.index = "Keyword index"
-features.option.bibliography = "Bibliography"
-features.option.label.bibliography = "References and sources"
-use-typst.prompt          = "Use Typst for typesetting"
-output-format.prompt      = "Output format"
+      label:
+        glossary: Terms and definitions
+        illustrations: Images and diagrams
+        index: Keyword index
+        bibliography: References and sources
+  use-typst:
+    prompt: Use Typst for typesetting
+  output-format:
+    prompt: Output format
 
-[messages.ru]
-book-title.prompt         = "Название книги"
-author.prompt             = "Автор"
-author.placeholder        = "Ваше имя"
-genre.prompt              = "Выберите жанр"
-genre.option.fantasy      = "Фэнтези"
-genre.option.label.fantasy = "Магия, мифические существа, вымышленные миры"
-genre.option.scifi        = "Научная фантастика"
-genre.option.label.scifi  = "Будущее, технологии, космические путешествия"
-genre.option.mystery      = "Детектив"
-genre.option.label.mystery = "Преступления, расследования, саспенс"
-genre.option.romance      = "Романтика"
-genre.option.label.romance = "Любовные истории, отношения, эмоции"
-features.prompt           = "Выберите элементы книги"
-features.option.glossary  = "Глоссарий"
-features.option.label.glossary = "Термины и определения"
-features.option.illustrations = "Иллюстрации"
-features.option.label.illustrations = "Изображения и диаграммы"
-features.option.index     = "Индекс"
-features.option.label.index = "Ключевые слова"
-features.option.bibliography = "Библиография"
-features.option.label.bibliography = "Ссылки и источники"
-use-typst.prompt          = "Использовать Typst для вёрстки"
-output-format.prompt      = "Формат вывода"
+  ru:
+    book-title:
+      prompt: Название книги
+    author:
+      prompt: Автор
+      placeholder: Ваше имя
+    genre:
+      prompt: Выберите жанр
+      option:
+        fantasy: Фэнтези
+        scifi: Научная фантастика
+        mystery: Детектив
+        romance: Романтика
+
+        label:
+          fantasy: Магия, мифические существа, вымышленные миры
+          scifi: Будущее, технологии, космические путешествия
+          mystery: Преступления, расследования, саспенс
+          romance: Любовные истории, отношения, эмоции
+    features:
+      prompt: Выберите элементы книги
+      option:
+        glossary: Глоссарий
+        illustrations: Иллюстрации
+        index: Индекс
+        bibliography: Библиография
+
+        label:
+          glossary: Термины и определения
+          illustrations: Изображения и диаграммы
+          index: Ключевые слова
+          bibliography: Ссылки и источники
+    use-typst:
+      prompt: Использовать Typst для вёрстки
+    output-format:
+      prompt: Формат вывода
 ```
 
 ---
