@@ -287,6 +287,12 @@ Each `[[fields]]` entry supports:
 | `default`        | Default value used if the user presses Enter without typing. Use `"{placeholder}"` to mirror the placeholder. For `boolean`/`multi-select`, a native TOML `true`/`false` or array also works |
 | `options`        | The list of choices — required for `select` and `multi-select`                                                                                                                               |
 | `is-folder-name` | If `true`, the field's value becomes the name of the created project folder (only meaningful for `text`)                                                                                     |
+| `min`            | Minimum value for `number` fields (inclusive)                                                                                                                                                |
+| `max`            | Maximum value for `number` fields (inclusive)                                                                                                                                                |
+| `pattern`        | Regular expression for `text` field validation (Python regex syntax, uses `re.fullmatch`)                                                                                                    |
+| `allow-custom`   | If `true`, allows entering custom values in `select` and `multi-select` fields                                                                                                               |
+| `min-cols`       | Minimum number of columns in interactive picker (default: 1). Only effective when terminal is wide enough                                                                                    |
+| `show-if`        | Conditional expression to show/hide the field based on other fields (see Conditional fields below)                                                                                           |                                                                                |
 
 ### Field types
 
@@ -327,10 +333,51 @@ default = true
 
 An unknown `type`, or a `select`/`multi-select` without `options`, falls back to plain text input with a warning — it won't crash project creation.
 
+### Conditional fields
+
+The `show-if` attribute lets you conditionally show or hide fields based on values of previously answered fields. It uses a simple expression language with logical operators.
+
+**Supported operators:**
+- Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- Membership: `in`, `not in`
+- Logical: `and`, `or`, `not`
+- Grouping: parentheses `( )`
+- Truthiness: `field` alone checks for truthiness
+
+**Examples:**
+
+```toml
+[[fields]]
+id      = "use-ci"
+type    = "boolean"
+default = false
+
+[[fields]]
+id      = "ci-provider"
+type    = "select"
+options = ["github-actions", "gitlab-ci", "circle-ci"]
+show-if = "use-ci"
+# Only shown if use-ci is true
+
+[[fields]]
+id      = "enterprise-plan"
+type    = "select"
+options = ["basic", "pro", "enterprise"]
+show-if = "features in ['enterprise']"
+# Only shown if 'enterprise' is selected in the 'features' multi-select field
+
+[[fields]]
+id      = "deployment-type"
+type    = "select"
+options = ["dev", "staging", "production"]
+show-if = "ci-provider == 'github-actions' and use-ci"
+# Only shown for GitHub Actions CI
+```
+
 ### Targets
 
 After collecting field values, YAL writes them into files specified under
-`[[targets]]`:
+`[[targets]]`. Supported formats: `yaml`, `json`, `toml`, `env`.
 
 ```toml
 [[targets]]
@@ -338,7 +385,7 @@ file   = "/config/meta.yaml"
 format = "yaml"
 
   [[targets.fields]]
-  key   = "project.name"          # dot-separated YAML path
+  key   = "project.name"          # dot-separated path
   field = "project-name"          # use value from [[fields]] id="project-name"
 
   [[targets.fields]]
@@ -352,7 +399,41 @@ format = "yaml"
   [[targets.fields]]
   key   = "meta.copyright"
   value = "© {author}, ${YEAR}"  # interpolation + generator
+
+  [[targets.fields]]
+  key   = "app.port"
+  value = "${NULL}"              # sets YAML key to ~ (null), JSON to null
 ```
+
+**Path syntax for nested keys:**
+- project.name → sets project.name in the target file
+- app[0].url → sets the first element's url field
+- database[0] → sets the first element of the array
+
+**Field mapping options:**
+- field — use value from a [[fields]] entry by its id
+- value — use a literal value or generator expression (e.g., "${DATE}", "© {author}")
+- fallback — fallback value if the primary field or value resolves to empty ("", [], or None)
+
+### .env file support
+
+Target format env handles .env files:
+
+```toml
+[[targets]]
+file   = "/.env"
+format = "env"
+
+  [[targets.fields]]
+  key   = "APP_NAME"
+  field = "project-name"
+
+  [[targets.fields]]
+  key   = "APP_PORT"
+  field = "port"
+```
+
+YAL preserves comments and empty lines, updates existing variables in place, and adds new ones at the end. Values with spaces or special characters are automatically quoted.
 
 ### Built-in generators
 
@@ -369,6 +450,40 @@ format = "yaml"
 
 Field values can be interpolated with `{field-id}` syntax and combined freely
 with generators: `"© {author}, ${YEAR}"`.
+
+### Option localization and labels
+
+For `select` and `multi-select` fields, you can localize option display names and add descriptions:
+
+```toml
+[messages]
+genre.prompt = "Select book genre"
+# genre.option."Fantasy"
+genre.option.label."Fantasy" = "Magic, mythical creatures, imaginary worlds"
+genre.option."Sci-Fi" = "Science Fiction"
+genre.option.label."Sci-Fi" = "Future, technology, space exploration"
+# genre.option."Mystery"
+genre.option.label."Mystery" = "Crime, detective work, suspense"
+
+[messages.ru]
+genre.prompt = "Выберите жанр книги"
+genre.option."Fantasy" = "Фэнтези"
+genre.option.label."Fantasy" = "Магия, мифические существа, вымышленные миры"
+genre.option."Sci-Fi" = "Научная фантастика"
+genre.option.label."Sci-Fi" = "Будущее, технологии, космические путешествия"
+genre.option."Mystery" = "Детектив"
+genre.option.label."Mystery" = "Преступления, расследования, саспенс"
+```
+
+When displayed in the picker, options show both the display name and description:
+
+```
+Fantasy — Magic, mythical creatures, imaginary worlds
+Science Fiction — Future, technology, space exploration
+Mystery — Crime, detective work, suspense
+```
+
+The stored value remains the original option key (`"Fantasy"`, `"Sci-Fi"`, `"Mystery"`), not the display name.
 
 ### Localization
 
@@ -435,11 +550,11 @@ yal new vue:minimal
 
 ```toml
 [meta]
-yal-min-version = "0.1.1"
-post-commands   = ["git init", "npm install"]
+yal-min-version = "0.1.3"
+post-commands   = ["git init", "pip install -r requirements.txt"]
 
 [[fields]]
-id             = "project-name"
+id             = "book-title"
 type           = "text"
 required       = true
 is-folder-name = true
@@ -449,22 +564,120 @@ id      = "author"
 type    = "text"
 default = "{placeholder}"
 
+[[fields]]
+id      = "genre"
+type    = "select"
+options = ["fantasy", "scifi", "mystery", "romance"]
+default = "fantasy"
+
+[[fields]]
+id      = "features"
+type    = "multi-select"
+options = ["glossary", "illustrations", "index", "bibliography"]
+default = ["glossary", "bibliography"]
+
+[[fields]]
+id      = "use-typst"
+type    = "boolean"
+default = true
+
+[[fields]]
+id      = "output-format"
+type    = "select"
+options = ["pdf", "html", "epub"]
+show-if = "use-typst"
+default = "pdf"
+
 [[targets]]
-file   = "/package.json"
-format = "json"
+file   = "/book.yaml"
+format = "yaml"
 
   [[targets.fields]]
-  key   = "name"
-  field = "project-name"
+  key   = "book.title"
+  field = "book-title"
 
   [[targets.fields]]
-  key   = "author"
+  key   = "book.author"
   field = "author"
 
+  [[targets.fields]]
+  key   = "book.genre"
+  field = "genre"
+
+  [[targets.fields]]
+  key   = "book.features"
+  field = "features"
+
+  [[targets.fields]]
+  key   = "book.created"
+  value = "${DATE}"
+
+[[targets]]
+file   = "/.env"
+format = "env"
+
+  [[targets.fields]]
+  key   = "BOOK_TITLE"
+  field = "book-title"
+
+  [[targets.fields]]
+  key   = "BOOK_AUTHOR"
+  field = "author"
+
+  [[targets.fields]]
+  key   = "OUTPUT_FORMAT"
+  field = "output-format"
+  fallback = "pdf"
+
 [messages]
-project-name.prompt      = "Project name"
-author.prompt            = "Author"
-author.placeholder       = "Your Name"
+book-title.prompt         = "Book title"
+author.prompt             = "Author"
+author.placeholder        = "Your Name"
+genre.prompt              = "Select genre"
+genre.option.fantasy      = "Fantasy"
+genre.option.label.fantasy = "Magic, mythical creatures, imaginary worlds"
+genre.option.scifi        = "Science Fiction"
+genre.option.label.scifi  = "Future, technology, space exploration"
+genre.option.mystery      = "Mystery"
+genre.option.label.mystery = "Crime, detective work, suspense"
+genre.option.romance      = "Romance"
+genre.option.label.romance = "Love stories, relationships, emotions"
+features.prompt           = "Select book features"
+features.option.glossary  = "Glossary"
+features.option.label.glossary = "Terms and definitions"
+features.option.illustrations = "Illustrations"
+features.option.label.illustrations = "Images and diagrams"
+features.option.index     = "Index"
+features.option.label.index = "Keyword index"
+features.option.bibliography = "Bibliography"
+features.option.label.bibliography = "References and sources"
+use-typst.prompt          = "Use Typst for typesetting"
+output-format.prompt      = "Output format"
+
+[messages.ru]
+book-title.prompt         = "Название книги"
+author.prompt             = "Автор"
+author.placeholder        = "Ваше имя"
+genre.prompt              = "Выберите жанр"
+genre.option.fantasy      = "Фэнтези"
+genre.option.label.fantasy = "Магия, мифические существа, вымышленные миры"
+genre.option.scifi        = "Научная фантастика"
+genre.option.label.scifi  = "Будущее, технологии, космические путешествия"
+genre.option.mystery      = "Детектив"
+genre.option.label.mystery = "Преступления, расследования, саспенс"
+genre.option.romance      = "Романтика"
+genre.option.label.romance = "Любовные истории, отношения, эмоции"
+features.prompt           = "Выберите элементы книги"
+features.option.glossary  = "Глоссарий"
+features.option.label.glossary = "Термины и определения"
+features.option.illustrations = "Иллюстрации"
+features.option.label.illustrations = "Изображения и диаграммы"
+features.option.index     = "Индекс"
+features.option.label.index = "Ключевые слова"
+features.option.bibliography = "Библиография"
+features.option.label.bibliography = "Ссылки и источники"
+use-typst.prompt          = "Использовать Typst для вёрстки"
+output-format.prompt      = "Формат вывода"
 ```
 
 ---
