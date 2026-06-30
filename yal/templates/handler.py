@@ -330,9 +330,11 @@ class GenericHandler:
         print(t("common.confirm-prompt"), end="", flush=True)
         try:
             answer = input().strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return False
+        except KeyboardInterrupt:
+            raise
         return answer in yes_variants()
 
 

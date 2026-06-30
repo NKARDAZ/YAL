@@ -12,6 +12,7 @@ from yal.commands import add as cmd_add
 from yal.commands import remove as cmd_remove
 from yal.project_config import BUILTIN_COMMANDS
 from yal.version import get_version
+from yal.i18n import t
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,17 +117,28 @@ def main() -> None:
         # Встроенные команды
         if command in BUILTIN_COMMANDS:
             args = parser.parse_args(args_list)
-            if args.command == "new":
-                cmd_create.run(args)
-            elif args.command == "update":
-                cmd_update.run(args)
-            elif args.command == "add":
-                cmd_add.run(args)
-            elif args.command == "remove":
-                cmd_remove.run(args)
+
+            # Обёртка для перехвата KeyboardInterrupt
+            try:
+                if args.command == "new":
+                    cmd_create.run(args)
+                elif args.command == "update":
+                    cmd_update.run(args)
+                elif args.command == "add":
+                    cmd_add.run(args)
+                elif args.command == "remove":
+                    cmd_remove.run(args)
+            except KeyboardInterrupt:
+                print(f"\n[YAL] {t('errors.interrupted')}")
+                sys.exit(130)
             return
 
     if args_list:
-        cmd_run.run_from_argv(args_list)
+        # Для run команды тоже нужен перехват
+        try:
+            cmd_run.run_from_argv(args_list)
+        except KeyboardInterrupt:
+            print(f"\n[YAL] {t('errors.interrupted')}")
+            sys.exit(130)
     else:
         parser.print_help()

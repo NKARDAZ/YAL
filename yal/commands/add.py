@@ -54,9 +54,11 @@ def run(args: argparse.Namespace) -> None:
         print(t("common.confirm-prompt"), end="", flush=True)
         try:
             answer = input().strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             sys.exit(0)
+        except KeyboardInterrupt:
+            raise
         if answer not in yes_variants():
             print(f"[YAL] {t('errors.cancelled', action=t('add.action'))}")
             sys.exit(0)
@@ -97,9 +99,11 @@ def _ask_excludes() -> list[str]:
     print(t("common.confirm-prompt"), end="", flush=True)
     try:
         answer = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print()
         return []
+    except KeyboardInterrupt:
+        raise
 
     if answer not in yes_variants():
         return []
@@ -110,9 +114,11 @@ def _ask_excludes() -> list[str]:
         print("  > ", end="", flush=True)
         try:
             line = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             break
+        except KeyboardInterrupt:
+            raise
         if not line:
             break
         excludes.append(line)

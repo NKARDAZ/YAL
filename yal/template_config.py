@@ -265,7 +265,6 @@ def run_actions(actions: Actions, values: dict[str, Any], dest_dir: Path, phase:
     on_linux = platform.system() == "Linux"
     on_macos = platform.system() == "Darwin"
 
-    # Определяем текущую ОС
     current_os = "windows" if on_windows else ("linux" if on_linux else ("macos" if on_macos else "unknown"))
 
     commands = actions.pre if phase == "pre" else actions.post
@@ -285,21 +284,33 @@ def run_actions(actions: Actions, values: dict[str, Any], dest_dir: Path, phase:
                 print(f"[YAL] {t('config.action-condition-error', name=action.cmd, error=e)}")
                 continue
 
-        resolved = generators.resolve(action.cmd, values)
-        resolved_cmd = str(resolved) if resolved is not None else ""
+        try:
+            template_tokens = shlex.split(action.cmd, posix=not on_windows)
+        except ValueError as e:
+            print(f"[YAL] {t('config.action-parse-error', name=action.cmd, error=e)}")
+            continue
 
-        if not resolved_cmd:
+        resolved_tokens = [
+            str(generators.resolve(tok, values)) for tok in template_tokens
+        ]
+
+        if not resolved_tokens or not any(resolved_tokens):
             print(f"[YAL] {t('config.action-empty-command')}")
             continue
 
-        print(f"[YAL] {t('config.executing', name=resolved_cmd)}")
+        if on_windows:
+            cmd_to_run = ' '.join(resolved_tokens)
+        else:
+            cmd_to_run = resolved_tokens
+
+        print(f"[YAL] {t('config.executing', name=' '.join(resolved_tokens))}")
         try:
             if on_windows:
-                subprocess.run(resolved_cmd, cwd=dest_dir, check=True, shell=True)
+                subprocess.run(cmd_to_run, cwd=dest_dir, check=True, shell=True)
             else:
-                subprocess.run(shlex.split(resolved_cmd), cwd=dest_dir, check=True)
+                subprocess.run(cmd_to_run, cwd=dest_dir, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"[YAL] {t('config.executing-failed', name=resolved_cmd, error=e)}")
+            print(f"[YAL] {t('config.executing-failed', name=' '.join(resolved_tokens), error=e)}")
 
 
 # ─── интерактивный сбор ───────────────────────────────────────────────────────
@@ -355,7 +366,7 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str, config:
     if fd.type == "boolean":
         return _ask_boolean(fd, prompt_text, default)
     if fd.type == "select":
-        return _ask_select(fd, prompt_text, default, placeholder, config)
+        return _ask_select(fd, prompt_text, placeholder, default, config)
     if fd.type == "multi-select":
         return _ask_multi_select(fd, prompt_text, default, config)
     if fd.type == "number":
@@ -377,8 +388,10 @@ def _ask_text(fd: FieldDef, prompt_text: str, placeholder: str, default: str) ->
         print(f"[YAL] {prompt_text}{display_default}: ", end="", flush=True)
         try:
             raw = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+        except KeyboardInterrupt:
+            raise
 
         value = raw if raw else default
 
@@ -403,8 +416,10 @@ def _ask_boolean(fd: FieldDef, prompt_text: str, default: str) -> bool:
     print(f"[YAL] {prompt_text}{hint}: ", end="", flush=True)
     try:
         raw = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+    except KeyboardInterrupt:
+        raise
     if not raw:
         return default_value
     return raw in yes_variants()
@@ -454,8 +469,10 @@ def _ask_select(fd: FieldDef, prompt_text: str, placeholder: str, default: str, 
             print(f"[YAL] {prompt_text}{display_default}\n      {hint}: ", end="", flush=True)
             try:
                 raw = input().strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+            except KeyboardInterrupt:
+                raise
 
             raw_value = raw if raw else default_value
 
@@ -530,9 +547,10 @@ def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str, config: YalC
         print(f"[YAL] {prompt_text}{display_default}\n      {hint}: ", end="", flush=True)
         try:
             raw = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
-
+        except KeyboardInterrupt:
+            raise
         chosen = [v.strip() for v in raw.split(",") if v.strip()] if raw else default_display
 
         if not chosen:
@@ -574,8 +592,10 @@ def _collect_lines(prompt_text: str) -> list[str]:
         print("  > ", end="", flush=True)
         try:
             line = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+        except KeyboardInterrupt:
+            raise
         if not line:
             break
         items.append(line)
@@ -616,9 +636,10 @@ def _ask_number(fd: FieldDef, prompt_text: str, default: str) -> int | float | N
         print(f"[YAL] {prompt_text}{display_default}{suffix}: ", end="", flush=True)
         try:
             raw = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
-
+        except KeyboardInterrupt:
+            raise
         raw_value = raw if raw else default
         if not raw_value:
             if fd.required:

@@ -9,6 +9,7 @@ unknown-template = "Template '{name}' not found for '{kind}'. Available: {availa
 parse-spec       = "Could not parse: '{spec}'"
 parse-spec-hint  = "Format: {fmt}"
 cancelled        = "{action} cancelled."
+interrupted      = "Operation interrupted by user."
 commit-info-fail = "Could not get commit info: {error}"
 release-missing  = "Release {ref!r} not found.\n      Available: {available}"
 no-releases-warn = "Warning: could not fetch releases ({error})"
