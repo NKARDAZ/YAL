@@ -308,7 +308,7 @@ applies them to target files in the new project.
 
 ```yaml
 meta:
-  yal-min-version: '0.1.1'
+  yal-min-version: '0.1.3'
   exclude: ['examples/'] # paths not copied into the project
 
 actions:
@@ -903,7 +903,7 @@ messages:
         illustrations: Иллюстрации
         index: Индекс
         bibliography: Библиография
-        
+
         label:
           glossary: Термины и определения
           illustrations: Изображения и диаграммы
