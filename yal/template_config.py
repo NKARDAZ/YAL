@@ -93,9 +93,9 @@ class FieldDef:
     default: str
     options: list[str]
     is_folder_name: bool = False
-    min: float | None = None       # только для type="number"
-    max: float | None = None       # только для type="number"
-    pattern: str | None = None     # только для type="text" — валидируется через re.fullmatch
+    min: float | None = None
+    max: float | None = None
+    pattern: str | None = None
     allow_custom: bool = False
     min_cols: int = 1
     show_if: str | None = None
@@ -268,7 +268,7 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str, config:
     if fd.type == "boolean":
         return _ask_boolean(fd, prompt_text, default)
     if fd.type == "select":
-        return _ask_select(fd, prompt_text, default, config)
+        return _ask_select(fd, prompt_text, default, placeholder, config)
     if fd.type == "multi-select":
         return _ask_multi_select(fd, prompt_text, default, config)
     if fd.type == "number":
@@ -282,13 +282,9 @@ def _ask(fd: FieldDef, prompt_text: str, placeholder: str, default: str, config:
 
 
 def _ask_text(fd: FieldDef, prompt_text: str, placeholder: str, default: str) -> str:
-    compiled_pattern: re.Pattern[str] | None = None
-    if fd.pattern:
-        try:
-            compiled_pattern = re.compile(fd.pattern)
-        except re.error as e:
-            print(f"[YAL] {t('config.field-pattern-invalid-regex', id=fd.id, error=e)}")
-
+    """
+    Аналог _ask_text, но с валидацией паттерна.
+    """
     while True:
         display_default = f" [{default}]" if default else ""
         print(f"[YAL] {prompt_text}{display_default}: ", end="", flush=True)
@@ -296,12 +292,18 @@ def _ask_text(fd: FieldDef, prompt_text: str, placeholder: str, default: str) ->
             raw = input().strip()
         except (EOFError, KeyboardInterrupt):
             raise RuntimeError(t("errors.cancelled", action=t("create.action")))
+
         value = raw if raw else default
+
         if fd.required and not value:
+            print(f"[YAL] {t('config.field-required')}")
             continue
-        if value and compiled_pattern is not None and not compiled_pattern.fullmatch(value):
-            print(f"[YAL] {t('config.field-pattern-invalid', pattern=fd.pattern)}")
+
+        valid, error_msg = _validate_pattern(fd, value)
+        if not valid:
+            print(f"[YAL] {error_msg}")
             continue
+
         return value
 
 
@@ -341,14 +343,13 @@ def _option_display(fd: FieldDef, config: YalConfig, opt: str) -> tuple[Any, str
     return value, display
 
 
-def _ask_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig) -> str:
+def _ask_select(fd: FieldDef, prompt_text: str, placeholder: str, default: str, config: YalConfig) -> str:
     custom_label = t("config.field-select-custom")
 
     resolved = [_option_display(fd, config, opt) for opt in fd.options]
-    option_values: list[Any] = [v for v, _ in resolved]  # Оригинальные значения
-    display_options: list[str] = [d for _, d in resolved]  # Локализованные для отображения
+    option_values: list[Any] = [v for v, _ in resolved]
+    display_options: list[str] = [d for _, d in resolved]
 
-    # default из [[fields]] всегда оригинальное значение
     default_value = default if default in fd.options else default
 
     if fd.allow_custom:
@@ -387,8 +388,9 @@ def _ask_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig)
             print(f"[YAL] {t('config.field-invalid-option', options=', '.join(display_options))}")
 
     if value is _CUSTOM:
+        # Проверяем паттерн для кастомного значения
         return _ask_text(fd, prompt_text, "", "")
-    return str(value)  # Возвращаем оригинальное значение
+    return str(value)
 
 
 def _ask_multi_select(fd: FieldDef, prompt_text: str, default: str, config: YalConfig) -> list[str]:
@@ -840,3 +842,24 @@ def _localize_value(fd: FieldDef, config: YalConfig, value: Any) -> Any:
 
     # Иначе возвращаем как есть
     return value
+
+
+def _validate_pattern(fd: FieldDef, value: str) -> tuple[bool, str | None]:
+    """
+    Проверяет значение на соответствие паттерну.
+    Возвращает (валидно, сообщение_об_ошибке)
+    """
+    if not fd.pattern:
+        return True, None
+
+    if not value:
+        return True, None
+
+    try:
+        compiled = re.compile(fd.pattern)
+        if not compiled.fullmatch(value):
+            return False, t("config.field-pattern-invalid", pattern=fd.pattern)
+        return True, None
+    except re.error as e:
+        print(f"[YAL] {t('config.field-pattern-invalid-regex', id=fd.id, error=e)}")
+        return True, None
