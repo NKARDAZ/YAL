@@ -1,4 +1,5 @@
 [common]
+confirm-prompt				= " [д/н]"
 confirm-prompt-false	= " [д/Н]"
 confirm-prompt-true		= " [Д/н]"
 

@@ -16,13 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[no-redef]
-    except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]
+import tomllib
 
 _LOCALES_DIR = Path(__file__).parent / "locales"
 _FALLBACK_LANG = "en"

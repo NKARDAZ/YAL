@@ -112,7 +112,7 @@ def main() -> None:
     parser.parse_known_args(flags)
 
     if command_args:
-        command = command_args[0].lower()
+        command = command_args[0]
 
         # Встроенные команды
         if command in BUILTIN_COMMANDS:

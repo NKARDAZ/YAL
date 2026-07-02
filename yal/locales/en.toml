@@ -1,5 +1,6 @@
 [common]
 yes-variants					= ["y", "yes", "j", "ja", "д", "да", "d", "da", "はい", "是", "是的"]
+confirm-prompt				= " [y/n]"
 confirm-prompt-false	= " [y/N]"
 confirm-prompt-true		= " [Y/n]"
 

@@ -11,5 +11,7 @@ build: clean
 dev: clean build
 	pip install -e .
 
-publish: clean build
+publish: clean build publish-only
+
+publish-only:
 	python -m twine upload dist/* --verbose

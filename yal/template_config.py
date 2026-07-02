@@ -21,21 +21,8 @@ from yal.version import get_version
 from yal.i18n import t, current_lang, yes_variants
 from yal import generators, picker
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[no-redef]
-    except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]
-
-_tomli_w = None
-try:
-    import tomli_w as _tomli_w
-    _TOMLI_W_AVAILABLE = True
-except ImportError:
-    _tomli_w = None
-    _TOMLI_W_AVAILABLE = False
+import tomllib
+import tomli_w
 
 YAL_YML = ".yal/template.yml"
 
@@ -779,10 +766,6 @@ def _apply_json(target: "TargetDef", values: dict[str, Any], file_path: Path, co
 # ─── toml ─────────────────────────────────────────────────────────────────────
 
 def _apply_toml(target: "TargetDef", values: dict[str, Any], file_path: Path, config: YalConfig) -> None:
-    if not _TOMLI_W_AVAILABLE or _tomli_w is None:
-        print(f"[YAL] {t('config.toml-write-unavailable', path=file_path)}")
-        return
-
     with open(file_path, "rb") as f:
         data = tomllib.load(f)
 
@@ -792,7 +775,7 @@ def _apply_toml(target: "TargetDef", values: dict[str, Any], file_path: Path, co
             if val is not None:
                 _set_nested_path(data, m.key, val)
 
-    file_path.write_bytes(_tomli_w.dumps(data).encode('utf-8'))
+    file_path.write_bytes(tomli_w.dumps(data).encode('utf-8'))
 
 
 # ─── env ──────────────────────────────────────────────────────────────────────

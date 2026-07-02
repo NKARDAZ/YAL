@@ -1,6 +1,6 @@
 # [YAL](https://pypi.org/project/yal-cmd/)
 
-<img src="logo.svg" width="48" align="left" />
+<img src="https://raw.githubusercontent.com/NKARDAZ/YAL/main/logo.svg" width="48" align="left" />
 
 **YAL** is a command-line utility for project initialization and updates based
 on templates from git repositories.
@@ -17,14 +17,13 @@ in package.json). Define them in `.yal/project.yml` and invoke them with
 pip install yal-cmd
 ```
 
-> **Requires Python >= 3.10**
+> **Requires Python >= 3.12**
 
 > **Dependencies:**
 >
 > - [requests](https://pypi.org/project/requests) >=2.34.2
 > - [ruamel.yaml](https://pypi.org/project/ruamel.yaml) >=0.19.1
 > - [tomli-w](https://pypi.org/project/tomli-w/) >=1.2.0
-> - [tomli](https://pypi.org/project/tomli-w/) when python < 3.11
 
 ---
 
@@ -460,7 +459,14 @@ enforced.
 
 **`number`** — an integer or float.
 
-**`list`** — one or more values, separated by commas.
+**`list`** — one or more values, entered one per line (press `Enter` after each, then an empty line to finish).
+
+```yaml
+fields:
+  - id: keywords
+    type: list
+    default: ['typst', 'book', 'publishing']
+```
 
 **`select`** — exactly one value from `options`. In an interactive terminal this
 renders as an arrow-key picker (`↑`/`↓` to move, `Enter` to confirm); when stdin
